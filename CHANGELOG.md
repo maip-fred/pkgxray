@@ -2,6 +2,11 @@
 
 Todos los cambios notables de este proyecto se documentan en este archivo.
 
+## [0.2.1] - 2026-04-14
+
+### Corregido
+- `__version__` en `__init__.py` ahora refleja correctamente la versión del paquete
+
 ## [0.2.0] - 2026-04-14
 
 ### Mejorado
