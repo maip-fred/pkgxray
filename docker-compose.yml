@@ -1,0 +1,17 @@
+version: "3.8"
+
+services:
+  test:
+    build: .
+    entrypoint: ["pytest"]
+    command: ["tests/", "-v", "--tb=short", "-m", "not slow"]
+
+  scan:
+    build: .
+    entrypoint: ["pkgxray"]
+    command: ["scan", "requests"]
+
+  scan-json:
+    build: .
+    entrypoint: ["pkgxray"]
+    command: ["scan", "requests", "--format", "json"]
