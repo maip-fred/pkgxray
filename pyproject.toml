@@ -1,0 +1,52 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pkgxray"
+version = "0.2.0"
+description = "Analyze PyPI packages for suspicious behavior before installing them"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.9"
+authors = [
+    {name = "pkgxray contributors"},
+]
+keywords = ["security", "pypi", "package", "analysis", "malware", "supply-chain"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Security",
+    "Topic :: Software Development :: Quality Assurance",
+]
+dependencies = [
+    "click>=8.0",
+    "rich>=13.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "build>=1.0",
+    "twine>=5.0",
+]
+
+[project.scripts]
+pkgxray = "pkgxray.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/maip-fred/pkgxray"
+Repository = "https://github.com/maip-fred/pkgxray"
+Issues = "https://github.com/maip-fred/pkgxray/issues"
+
+[tool.pytest.ini_options]
+markers = [
+    "slow: marks tests as slow (integration tests that download real packages)",
+]
