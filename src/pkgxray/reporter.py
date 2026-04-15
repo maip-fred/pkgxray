@@ -34,7 +34,7 @@ def print_terminal_report(result: ScanResult) -> None:
     Args:
         result: ScanResult obtenido del escaneo de un paquete.
     """
-    console = Console()
+    console = Console(width=200)
 
     # Encabezado
     console.print(Panel(
