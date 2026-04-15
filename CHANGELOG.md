@@ -2,6 +2,11 @@
 
 Todos los cambios notables de este proyecto se documentan en este archivo.
 
+## [0.2.2] - 2026-04-14
+
+### Corregido
+- Reporte en terminal: columnas de la tabla ya no aparecen cortadas en entornos Jupyter/Colab. Se fija el ancho de la consola Rich a 200 caracteres para evitar que la detección automática de terminal devuelva ~80 y comprima las columnas.
+
 ## [0.2.1] - 2026-04-14
 
 ### Corregido
