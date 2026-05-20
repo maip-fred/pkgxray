@@ -254,28 +254,28 @@ def generate_html_report(result: ScanResult) -> str:
 
 def generate_report(
     result: ScanResult,
-    format: str = "terminal",
+    output_format: str = "terminal",
     output_path: Optional[str] = None,
 ) -> Optional[str]:
     """Genera un reporte en el formato solicitado.
 
     Args:
         result: ScanResult obtenido del escaneo de un paquete.
-        format: Uno de "terminal", "json", "html".
+        output_format: Uno de "terminal", "json", "html".
         output_path: Si se indica, escribe el reporte en ese archivo.
 
     Returns:
         La cadena del reporte para los formatos json/html, o None para terminal.
     """
-    if format == "terminal":
+    if output_format == "terminal":
         print_terminal_report(result)
         return None
-    elif format == "json":
+    elif output_format == "json":
         report = generate_json_report(result)
-    elif format == "html":
+    elif output_format == "html":
         report = generate_html_report(result)
     else:
-        raise ValueError(f"Formato desconocido: {format!r}. Opciones válidas: terminal, json, html")
+        raise ValueError(f"Formato desconocido: {output_format!r}. Opciones válidas: terminal, json, html")
 
     if output_path:
         Path(output_path).write_text(report, encoding="utf-8")

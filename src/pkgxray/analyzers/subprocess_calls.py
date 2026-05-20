@@ -25,7 +25,14 @@ class SubprocessAnalyzer(BaseAnalyzer):
     name = "subprocess"
     description = "Detecta ejecución de comandos del sistema operativo"
 
-    def analyze(self, source_code: str, filename: str) -> List[Finding]:
+    def analyze(
+        self,
+        source_code: str,
+        filename: str,
+        *,
+        tree=None,
+        parent_map=None,
+    ) -> List[Finding]:
         """Analiza el código fuente en busca de llamadas reales a subprocess y os.
 
         Solo se reportan llamadas concretas (subprocess.run, os.system, etc.),
@@ -33,13 +40,15 @@ class SubprocessAnalyzer(BaseAnalyzer):
         Las llamadas al nivel del módulo (fuera de funciones/clases) se elevan a
         CRITICAL porque se ejecutan automáticamente al importar el paquete.
         """
-        tree = self._parse_ast(source_code)
+        if tree is None:
+            tree = self._parse_ast(source_code)
         if tree is None:
             return []
 
         lines = source_code.splitlines()
         findings = []
-        parent_map = build_parent_map(tree)
+        if parent_map is None:
+            parent_map = build_parent_map(tree)
 
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):

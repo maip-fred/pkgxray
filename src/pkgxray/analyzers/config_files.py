@@ -18,6 +18,8 @@ except ImportError:
     except ImportError:
         tomllib = None  # type: ignore[assignment]
 
+TOMLLIB_AVAILABLE: bool = tomllib is not None
+
 # Paquetes de build que son sospechosos en [build-system].requires.
 # Paquetes legítimos comunes (setuptools, hatchling, flit, etc.) no están aquí.
 _SUSPICIOUS_BUILD_DEPS = {
@@ -217,7 +219,15 @@ class ConfigFileAnalyzer(BaseAnalyzer):
     name = "config_files"
     description = "Analiza pyproject.toml y setup.cfg en busca de configuraciones sospechosas"
 
-    def analyze(self, source_code: str, filename: str) -> List[Finding]:
+    def analyze(
+        self,
+        source_code: str,
+        filename: str,
+        *,
+        tree=None,
+        parent_map=None,
+    ) -> List[Finding]:
+        # tree y parent_map no se usan: los configs son TOML/INI, no AST Python
         lower = filename.lower()
         if lower.endswith("pyproject.toml"):
             return _check_pyproject(source_code, filename)

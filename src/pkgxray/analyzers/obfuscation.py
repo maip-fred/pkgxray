@@ -13,9 +13,17 @@ class ObfuscationAnalyzer(BaseAnalyzer):
     name = "obfuscation"
     description = "Detecta técnicas de ofuscación de código"
 
-    def analyze(self, source_code: str, filename: str) -> List[Finding]:
+    def analyze(
+        self,
+        source_code: str,
+        filename: str,
+        *,
+        tree=None,
+        parent_map=None,
+    ) -> List[Finding]:
         """Analiza el código fuente en busca de patrones de ofuscación."""
-        tree = self._parse_ast(source_code)
+        if tree is None:
+            tree = self._parse_ast(source_code)
         if tree is None:
             return []
 

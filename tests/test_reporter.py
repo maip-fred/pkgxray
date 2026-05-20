@@ -202,3 +202,33 @@ def test_terminal_report_no_crash_with_skipped(capsys):
     skipped = [{"filename": "broken.py", "reason": "syntax_error"}]
     result = _make_result(skipped_files=skipped)
     print_terminal_report(result)
+
+
+# ---------------------------------------------------------------------------
+# generate_report — output_format parameter (regression: was named 'format')
+# ---------------------------------------------------------------------------
+
+def test_generate_report_json_output_format():
+    """`generate_report` must accept `output_format` keyword (not `format`)."""
+    from pkgxray.reporter import generate_report
+    result = _make_result()
+    output = generate_report(result, output_format="json")
+    assert output is not None
+    import json
+    data = json.loads(output)
+    assert data["package_name"] == "test-pkg"
+
+
+def test_generate_report_html_output_format():
+    from pkgxray.reporter import generate_report
+    result = _make_result()
+    output = generate_report(result, output_format="html")
+    assert output is not None
+    assert "pkgxray" in output
+
+
+def test_generate_report_invalid_format_raises():
+    from pkgxray.reporter import generate_report
+    result = _make_result()
+    with pytest.raises(ValueError, match="Formato desconocido"):
+        generate_report(result, output_format="xml")

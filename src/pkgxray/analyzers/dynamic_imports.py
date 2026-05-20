@@ -17,7 +17,14 @@ class DynamicImportAnalyzer(BaseAnalyzer):
     name = "dynamic_imports"
     description = "Detecta importaciones dinámicas de módulos"
 
-    def analyze(self, source_code: str, filename: str) -> List[Finding]:
+    def analyze(
+        self,
+        source_code: str,
+        filename: str,
+        *,
+        tree=None,
+        parent_map=None,
+    ) -> List[Finding]:
         """Analiza el código fuente en busca de patrones de importación dinámica.
 
         Reglas de severidad:
@@ -29,13 +36,15 @@ class DynamicImportAnalyzer(BaseAnalyzer):
         Para importlib.import_module() verifica que el receptor sea 'importlib'
         para evitar falsos positivos en objetos que tengan un método homónimo.
         """
-        tree = self._parse_ast(source_code)
+        if tree is None:
+            tree = self._parse_ast(source_code)
         if tree is None:
             return []
 
         lines = source_code.splitlines()
         findings = []
-        parent_map = build_parent_map(tree)
+        if parent_map is None:
+            parent_map = build_parent_map(tree)
 
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):

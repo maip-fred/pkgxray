@@ -18,19 +18,28 @@ class CodeExecAnalyzer(BaseAnalyzer):
     name = "code_exec"
     description = "Detecta ejecución dinámica de código (eval, exec, compile)"
 
-    def analyze(self, source_code: str, filename: str) -> List[Finding]:
+    def analyze(
+        self,
+        source_code: str,
+        filename: str,
+        *,
+        tree=None,
+        parent_map=None,
+    ) -> List[Finding]:
         """Analiza el código fuente en busca de llamadas a funciones de ejecución dinámica.
 
         eval/exec/compile a nivel del módulo se elevan a CRITICAL porque se ejecutan
         automáticamente al importar el paquete, sin necesidad de invocación explícita.
         """
-        tree = self._parse_ast(source_code)
+        if tree is None:
+            tree = self._parse_ast(source_code)
         if tree is None:
             return []
 
         lines = source_code.splitlines()
         findings = []
-        parent_map = build_parent_map(tree)
+        if parent_map is None:
+            parent_map = build_parent_map(tree)
 
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):

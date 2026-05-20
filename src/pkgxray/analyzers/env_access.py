@@ -49,7 +49,14 @@ class EnvAccessAnalyzer(BaseAnalyzer):
     name = "env_access"
     description = "Detecta accesos a variables de entorno"
 
-    def analyze(self, source_code: str, filename: str) -> List[Finding]:
+    def analyze(
+        self,
+        source_code: str,
+        filename: str,
+        *,
+        tree=None,
+        parent_map=None,
+    ) -> List[Finding]:
         """Analiza el código fuente en busca de accesos a variables de entorno.
 
         Clasificación base:
@@ -61,13 +68,15 @@ class EnvAccessAnalyzer(BaseAnalyzer):
             (se ejecuta automáticamente al importar)
           - Llamada LOW al nivel del módulo → sigue siendo LOW
         """
-        tree = self._parse_ast(source_code)
+        if tree is None:
+            tree = self._parse_ast(source_code)
         if tree is None:
             return []
 
         lines = source_code.splitlines()
         findings = []
-        parent_map = build_parent_map(tree)
+        if parent_map is None:
+            parent_map = build_parent_map(tree)
 
         for node in ast.walk(tree):
             line_num = getattr(node, 'lineno', 0)

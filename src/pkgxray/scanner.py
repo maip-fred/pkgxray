@@ -11,8 +11,8 @@ logger = logging.getLogger(__name__)
 
 from pkgxray import downloader, extractor, scorer
 from pkgxray.analyzers import get_all_analyzers
-from pkgxray.analyzers.base import ScanResult
-from pkgxray.analyzers.config_files import ConfigFileAnalyzer
+from pkgxray.analyzers.base import ScanResult, build_parent_map
+from pkgxray.analyzers.config_files import ConfigFileAnalyzer, TOMLLIB_AVAILABLE
 from pkgxray.analyzers.setup_scripts import SetupScriptAnalyzer
 from pkgxray.downloader import DownloadError, PackageNotFoundError
 
@@ -50,12 +50,15 @@ def scan(package_name: str, version: Optional[str] = None) -> ScanResult:
         skipped_files = []
 
         for extracted_file in extracted_files:
-            # Para archivos .py: verificar parseabilidad antes de correr los analizadores.
-            # Los archivos de config (pyproject.toml, setup.cfg) tienen su propio analizador
-            # y no pasan por ast.parse(), así que se excluyen de esta comprobación.
-            if extracted_file.filename.lower().endswith(".py"):
+            lower_fn = extracted_file.filename.lower()
+            tree = None
+            parent_map = None
+
+            if lower_fn.endswith(".py"):
+                # Parsear una sola vez: verifica sintaxis Y produce el tree/parent_map
+                # que se reutilizarán en todos los analizadores (evita N parseos duplicados).
                 try:
-                    ast.parse(extracted_file.content)
+                    tree = ast.parse(extracted_file.content)
                 except SyntaxError:
                     skipped_files.append({
                         "filename": extracted_file.filename,
@@ -68,6 +71,15 @@ def scan(package_name: str, version: Optional[str] = None) -> ScanResult:
                         "reason": "parse_error",
                     })
                     continue
+                parent_map = build_parent_map(tree)
+            elif extracted_file.is_config and lower_fn.endswith("pyproject.toml") and not TOMLLIB_AVAILABLE:
+                # Si tomllib no está disponible, el ConfigFileAnalyzer no puede analizar
+                # archivos TOML — lo registramos en skipped_files para que el usuario lo sepa.
+                skipped_files.append({
+                    "filename": extracted_file.filename,
+                    "reason": "tomllib_unavailable",
+                })
+                continue
 
             for analyzer in analyzers:
                 if extracted_file.is_config:
@@ -79,7 +91,12 @@ def scan(package_name: str, version: Optional[str] = None) -> ScanResult:
                     if not extracted_file.is_setup:
                         continue
                 try:
-                    findings = analyzer.analyze(extracted_file.content, extracted_file.filename)
+                    findings = analyzer.analyze(
+                        extracted_file.content,
+                        extracted_file.filename,
+                        tree=tree,
+                        parent_map=parent_map,
+                    )
                     all_findings.extend(findings)
                 except Exception as e:
                     # Un fallo individual en un analizador no debe abortar el escaneo completo

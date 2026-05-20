@@ -40,7 +40,14 @@ class NetworkAnalyzer(BaseAnalyzer):
     name = "network"
     description = "Detecta conexiones de red y solicitudes HTTP"
 
-    def analyze(self, source_code: str, filename: str) -> List[Finding]:
+    def analyze(
+        self,
+        source_code: str,
+        filename: str,
+        *,
+        tree=None,
+        parent_map=None,
+    ) -> List[Finding]:
         """Analiza el código fuente en busca de llamadas reales de red.
 
         Solo reporta llamadas concretas (urlopen, requests.get, socket.connect, etc.),
@@ -48,13 +55,15 @@ class NetworkAnalyzer(BaseAnalyzer):
         Las llamadas al nivel del módulo se elevan a CRITICAL porque se ejecutan
         automáticamente al importar el paquete.
         """
-        tree = self._parse_ast(source_code)
+        if tree is None:
+            tree = self._parse_ast(source_code)
         if tree is None:
             return []
 
         lines = source_code.splitlines()
         findings = []
-        parent_map = build_parent_map(tree)
+        if parent_map is None:
+            parent_map = build_parent_map(tree)
 
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):

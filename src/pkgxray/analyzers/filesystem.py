@@ -68,7 +68,14 @@ class FilesystemAnalyzer(BaseAnalyzer):
     name = "filesystem"
     description = "Detecta accesos sospechosos al sistema de archivos"
 
-    def analyze(self, source_code: str, filename: str) -> List[Finding]:
+    def analyze(
+        self,
+        source_code: str,
+        filename: str,
+        *,
+        tree=None,
+        parent_map=None,
+    ) -> List[Finding]:
         """Analiza el código fuente en busca de patrones de acceso sospechoso al filesystem.
 
         Detecta:
@@ -79,13 +86,15 @@ class FilesystemAnalyzer(BaseAnalyzer):
         Las llamadas destructivas al nivel del módulo se elevan a CRITICAL porque
         se ejecutan automáticamente en el momento de la importación.
         """
-        tree = self._parse_ast(source_code)
+        if tree is None:
+            tree = self._parse_ast(source_code)
         if tree is None:
             return []
 
         lines = source_code.splitlines()
         findings = []
-        parent_map = build_parent_map(tree)
+        if parent_map is None:
+            parent_map = build_parent_map(tree)
 
         for node in ast.walk(tree):
 

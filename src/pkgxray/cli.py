@@ -49,7 +49,7 @@ def scan_cmd(package_name, version, output_format, output, fail_above, verbose):
     try:
         console.print(f"\n[bold]Analizando [cyan]{package_name}[/cyan]...[/bold]\n")
         result = scan(package_name, version)
-        generate_report(result, format=output_format, output_path=output)
+        generate_report(result, output_format=output_format, output_path=output)
 
         if output:
             console.print(f"\n[bold]Reporte guardado en [green]{output}[/green][/bold]")

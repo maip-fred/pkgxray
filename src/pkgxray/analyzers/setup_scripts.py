@@ -28,7 +28,14 @@ class SetupScriptAnalyzer(BaseAnalyzer):
     name = "setup_scripts"
     description = "Detecta patrones peligrosos en archivos setup.py"
 
-    def analyze(self, source_code: str, filename: str) -> List[Finding]:
+    def analyze(
+        self,
+        source_code: str,
+        filename: str,
+        *,
+        tree=None,
+        parent_map=None,
+    ) -> List[Finding]:
         """Analiza setup.py en busca de hooks peligrosos de post-instalación.
 
         Este analizador solo produce hallazgos para archivos setup.py.
@@ -36,7 +43,8 @@ class SetupScriptAnalyzer(BaseAnalyzer):
         if "setup.py" not in filename.lower():
             return []
 
-        tree = self._parse_ast(source_code)
+        if tree is None:
+            tree = self._parse_ast(source_code)
         if tree is None:
             return []
 

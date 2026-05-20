@@ -57,8 +57,20 @@ class BaseAnalyzer(ABC):
     description: str = ""
 
     @abstractmethod
-    def analyze(self, source_code: str, filename: str) -> list:
-        """Analiza el código fuente y retorna una lista de objetos Finding."""
+    def analyze(
+        self,
+        source_code: str,
+        filename: str,
+        *,
+        tree: Optional[ast.AST] = None,
+        parent_map: Optional[dict] = None,
+    ) -> list:
+        """Analiza el código fuente y retorna una lista de objetos Finding.
+
+        Si el llamador ya ha parseado el AST y construido el parent_map, puede
+        pasarlos para evitar trabajo duplicado.  Ambos parámetros son opcionales
+        — el analizador los construirá por su cuenta si no se proporcionan.
+        """
         ...
 
     def _parse_ast(self, source_code: str):
