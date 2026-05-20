@@ -1,13 +1,27 @@
 """Extrae archivos Python de los archivos comprimidos de paquetes descargados."""
 
 import io
-import os
 import tarfile
 import zipfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import List
 
 from pkgxray.analyzers.base import ExtractedFile
+
+
+def _is_safe_archive_path(name: str) -> bool:
+    """Returns True if the archive member path is safe (no path traversal).
+
+    Works regardless of host OS by normalising both / and \\ separators,
+    then checking with PurePosixPath so that Windows-style paths inside
+    archives are caught even when running on Linux.
+    """
+    normalised = name.replace("\\", "/")
+    try:
+        p = PurePosixPath(normalised)
+    except Exception:
+        return False
+    return ".." not in p.parts and not p.is_absolute()
 
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5 MB
 
@@ -50,10 +64,9 @@ def _extract_from_tarball(archive_path: Path) -> List[ExtractedFile]:
             for member in tf.getmembers():
                 if not member.isfile():
                     continue
-                # Seguridad: normalizar la ruta y rechazar cualquier intento de
-                # path traversal, incluyendo la variante foo/./../../etc/passwd
-                normalized = os.path.normpath(member.name)
-                if normalized.startswith("..") or os.path.isabs(normalized):
+                # Seguridad: rechazar path traversal, incluyendo variantes con
+                # separadores mixtos (/, \) y secuencias ./.. en rutas de archivos.
+                if not _is_safe_archive_path(member.name):
                     continue
                 # Seguridad: ignorar archivos demasiado grandes
                 if member.size > MAX_FILE_SIZE:
@@ -96,10 +109,9 @@ def _extract_from_zip(archive_path: Path) -> List[ExtractedFile]:
             for info in zf.infolist():
                 if info.is_dir():
                     continue
-                # Seguridad: normalizar la ruta y rechazar cualquier intento de
-                # path traversal, incluyendo la variante foo/./../../etc/passwd
-                normalized = os.path.normpath(info.filename)
-                if normalized.startswith("..") or os.path.isabs(normalized):
+                # Seguridad: rechazar path traversal, incluyendo variantes con
+                # separadores mixtos (/, \) y secuencias ./.. en rutas de archivos.
+                if not _is_safe_archive_path(info.filename):
                     continue
                 # Seguridad: ignorar archivos demasiado grandes
                 if info.file_size > MAX_FILE_SIZE:
@@ -138,6 +150,14 @@ def _is_python_file(filename: str) -> bool:
         or lower.endswith("setup.cfg")
         or lower.endswith("pyproject.toml")
     )
+
+
+_BINARY_EXTENSIONS = {".so", ".pyd", ".dll", ".dylib"}
+
+
+def _is_binary_file(filename: str) -> bool:
+    """Returns True if the file is a compiled extension that cannot be AST-analysed."""
+    return Path(filename).suffix.lower() in _BINARY_EXTENSIONS
 
 
 def _is_setup_file(filename: str) -> bool:

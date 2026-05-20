@@ -323,3 +323,29 @@ def test_setup_cfg_dep_has_nonzero_line(analyzer):
     assert all(f.line_number > 0 for f in findings), (
         f"Expected non-zero line numbers, got: {[f.line_number for f in findings]}"
     )
+
+
+def test_find_line_skips_comment_lines():
+    """_find_line() must not return a comment line even if it contains the string."""
+    from pkgxray.analyzers.config_files import _find_line
+
+    content = "# This package no longer requires requests\n[build-system]\nrequires = [\"requests\"]\n"
+    line = _find_line(content, '"requests"', "'requests'", "requests")
+    assert line == 3, f"Expected line 3, got {line}"
+
+
+def test_find_line_skips_ini_semicolon_comments():
+    """; comment lines in INI/cfg files must be skipped."""
+    from pkgxray.analyzers.config_files import _find_line
+
+    content = "; requests used to be here\n[options]\ninstall_requires = requests>=2.0\n"
+    line = _find_line(content, "requests")
+    assert line == 3, f"Expected line 3, got {line}"
+
+
+def test_find_line_returns_zero_when_not_found():
+    """_find_line() returns 0 when the string is absent."""
+    from pkgxray.analyzers.config_files import _find_line
+
+    content = "[build-system]\nrequires = [\"hatchling\"]\n"
+    assert _find_line(content, "requests") == 0

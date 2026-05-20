@@ -75,6 +75,15 @@ def print_terminal_report(result: ScanResult) -> None:
             border_style="yellow",
         ))
 
+    # Aviso de archivos binarios no analizados
+    binary_count = getattr(result, "binary_files_found", 0)
+    if binary_count:
+        console.print(Panel(
+            f"[bold dim]Nota:[/bold dim] {binary_count} archivo(s) binario(s) compilado(s) "
+            f"(.so/.pyd/.dll/.dylib) encontrado(s) — no se analizan (se requeriría un desensamblador).",
+            border_style="dim",
+        ))
+
     if not result.findings:
         console.print("\n[bold green]¡No se encontraron patrones sospechosos![/bold green]\n")
         return
@@ -256,6 +265,8 @@ def generate_report(
     result: ScanResult,
     output_format: str = "terminal",
     output_path: Optional[str] = None,
+    *,
+    format: Optional[str] = None,          # deprecated alias for output_format
 ) -> Optional[str]:
     """Genera un reporte en el formato solicitado.
 
@@ -263,10 +274,21 @@ def generate_report(
         result: ScanResult obtenido del escaneo de un paquete.
         output_format: Uno de "terminal", "json", "html".
         output_path: Si se indica, escribe el reporte en ese archivo.
+        format: Deprecated. Use output_format instead.
 
     Returns:
         La cadena del reporte para los formatos json/html, o None para terminal.
     """
+    if format is not None:
+        import warnings
+        warnings.warn(
+            "The 'format' parameter is deprecated and will be removed in a future version. "
+            "Use 'output_format' instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        output_format = format
+
     if output_format == "terminal":
         print_terminal_report(result)
         return None

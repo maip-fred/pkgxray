@@ -112,3 +112,11 @@ def test_db_connect_not_flagged():
     code = 'def open_conn(self):\n    self.db.connect(host="localhost")'
     findings = analyzer.analyze(code, 'test.py')
     assert len(findings) == 0
+
+
+def test_aliased_requests_detected():
+    """import requests as req; req.get(url) must be detected."""
+    analyzer = NetworkAnalyzer()
+    code = "import requests as req\nreq.get('http://evil.com')\n"
+    findings = analyzer.analyze(code, "test.py")
+    assert len(findings) >= 1, "Aliased requests.get must be detected"

@@ -20,6 +20,7 @@ class ObfuscationAnalyzer(BaseAnalyzer):
         *,
         tree=None,
         parent_map=None,
+        aliases=None,   # accepted but not used by this analyser
     ) -> List[Finding]:
         """Analiza el código fuente en busca de patrones de ofuscación."""
         if tree is None:

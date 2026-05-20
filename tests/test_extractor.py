@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from pkgxray.extractor import extract_python_files, _is_python_file, _is_setup_file, _is_config_file
+from pkgxray.extractor import extract_python_files, _is_python_file, _is_setup_file, _is_config_file, _is_binary_file
 
 
 def _make_tarball(files: dict) -> Path:
@@ -141,3 +141,49 @@ def test_absolute_path_skipped_tarball():
         assert len(files) == 0
     finally:
         archive.unlink()
+
+
+def test_windows_backslash_traversal_rejected_tarball(tmp_path):
+    """foo\\..\\..\\evil.py must be rejected even on Linux."""
+    archive = tmp_path / "pkg.tar.gz"
+    with tarfile.open(archive, "w:gz") as tf:
+        content = b"evil = True\n"
+        info = tarfile.TarInfo(name="foo\\..\\..\\evil.py")
+        info.size = len(content)
+        tf.addfile(info, io.BytesIO(content))
+    result = extract_python_files(archive)
+    assert result == [], "Windows-style traversal must be rejected"
+
+
+def test_windows_backslash_traversal_rejected_zip(tmp_path):
+    """foo\\..\\..\\evil.py must be rejected even on Linux (zip)."""
+    archive = tmp_path / "pkg.whl"
+    with zipfile.ZipFile(archive, "w") as zf:
+        info = zipfile.ZipInfo("foo\\..\\..\\evil.py")
+        zf.writestr(info, "evil = True\n")
+    result = extract_python_files(archive)
+    assert result == [], "Windows-style traversal must be rejected"
+
+
+def test_is_binary_file():
+    """_is_binary_file() must recognise common compiled extension suffixes."""
+    assert _is_binary_file("module.so")
+    assert _is_binary_file("lib/module.pyd")
+    assert _is_binary_file("lib.dll")
+    assert _is_binary_file("lib.dylib")
+    assert not _is_binary_file("module.py")
+    assert not _is_binary_file("setup.cfg")
+
+
+def test_binary_files_not_extracted(tmp_path):
+    """Binary files (.so) inside an archive must not appear in extracted output."""
+    archive = tmp_path / "pkg.tar.gz"
+    with tarfile.open(archive, "w:gz") as tf:
+        for name, content in [("pkg/module.py", b"x = 1"), ("pkg/_ext.so", b"\x7fELF")]:
+            info = tarfile.TarInfo(name=name)
+            info.size = len(content)
+            tf.addfile(info, io.BytesIO(content))
+    result = extract_python_files(archive)
+    filenames = [f.filename for f in result]
+    assert any("module.py" in fn for fn in filenames)
+    assert not any(fn.endswith(".so") for fn in filenames)

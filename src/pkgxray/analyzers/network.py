@@ -3,7 +3,10 @@
 import ast
 from typing import List
 
-from pkgxray.analyzers.base import BaseAnalyzer, Finding, Severity, build_parent_map, is_module_level
+from pkgxray.analyzers.base import (
+    BaseAnalyzer, Finding, Severity, build_parent_map, is_module_level,
+    collect_import_aliases,
+)
 
 # Métodos que solo son sospechosos si el receptor ES un objeto de red conocido.
 # Evita falsos positivos en dict.get(), config.get(), etc.
@@ -47,6 +50,7 @@ class NetworkAnalyzer(BaseAnalyzer):
         *,
         tree=None,
         parent_map=None,
+        aliases=None,
     ) -> List[Finding]:
         """Analiza el código fuente en busca de llamadas reales de red.
 
@@ -64,6 +68,8 @@ class NetworkAnalyzer(BaseAnalyzer):
         findings = []
         if parent_map is None:
             parent_map = build_parent_map(tree)
+        if aliases is None:
+            aliases = collect_import_aliases(tree)
 
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
@@ -110,6 +116,8 @@ class NetworkAnalyzer(BaseAnalyzer):
             # self.session.get() también sea detectado (session ∈ _KNOWN_HTTP_RECEIVERS).
             elif attr in _HTTP_METHOD_ATTRS:
                 receiver = _extract_receiver_name(func.value)
+                # Resolve through aliases: 'req' → 'requests'
+                receiver = aliases.get(receiver, receiver)
                 if receiver in _KNOWN_HTTP_RECEIVERS:
                     severity = Severity.CRITICAL if at_module else Severity.HIGH
                     findings.append(Finding(

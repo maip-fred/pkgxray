@@ -7,6 +7,30 @@ from enum import Enum
 from typing import Optional
 
 
+def collect_import_aliases(tree: ast.AST) -> dict:
+    """Returns a dict mapping local alias names to their canonical module/symbol.
+
+    Handles:
+      import subprocess as sp              → {'sp': 'subprocess'}
+      import os as operating_system        → {'operating_system': 'os'}
+      from subprocess import run           → {'run': 'subprocess.run'}
+      from subprocess import Popen as P    → {'P': 'subprocess.Popen'}
+      from requests import get             → {'get': 'requests.get'}
+    """
+    aliases: dict = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.asname:
+                    aliases[alias.asname] = alias.name
+        elif isinstance(node, ast.ImportFrom):
+            module = node.module or ""
+            for alias in node.names:
+                local_name = alias.asname if alias.asname else alias.name
+                aliases[local_name] = f"{module}.{alias.name}" if module else alias.name
+    return aliases
+
+
 def build_parent_map(tree) -> dict:
     """Devuelve un dict que mapea id(nodo_hijo) → nodo_padre para todo el AST."""
     parent_map: dict = {}
@@ -64,12 +88,17 @@ class BaseAnalyzer(ABC):
         *,
         tree: Optional[ast.AST] = None,
         parent_map: Optional[dict] = None,
+        aliases: Optional[dict] = None,
     ) -> list:
         """Analiza el código fuente y retorna una lista de objetos Finding.
 
         Si el llamador ya ha parseado el AST y construido el parent_map, puede
         pasarlos para evitar trabajo duplicado.  Ambos parámetros son opcionales
         — el analizador los construirá por su cuenta si no se proporcionan.
+
+        If the caller has already collected the alias map, pass it here to avoid
+        rebuilding it.  Analysers should call collect_import_aliases(tree) as a
+        fallback when aliases is None.
         """
         ...
 
@@ -103,3 +132,4 @@ class ScanResult:
     summary: dict
     skipped_files: list = field(default_factory=list)
     # Each entry: {"filename": str, "reason": "syntax_error" | "parse_error"}
+    binary_files_found: int = 0

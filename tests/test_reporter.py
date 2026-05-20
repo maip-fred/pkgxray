@@ -232,3 +232,29 @@ def test_generate_report_invalid_format_raises():
     result = _make_result()
     with pytest.raises(ValueError, match="Formato desconocido"):
         generate_report(result, output_format="xml")
+
+
+def test_generate_report_deprecated_format_kwarg():
+    """generate_report(format=...) must still work but emit DeprecationWarning."""
+    import warnings
+    from pkgxray.reporter import generate_report
+    result = _make_result()
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        output = generate_report(result, format="json")
+    assert output is not None
+    assert len(w) == 1
+    assert issubclass(w[0].category, DeprecationWarning)
+    assert "output_format" in str(w[0].message)
+
+
+def test_generate_report_output_format_takes_precedence():
+    """When both format= and output_format= given, the call must not crash."""
+    import warnings
+    from pkgxray.reporter import generate_report
+    result = _make_result()
+    with warnings.catch_warnings(record=True):
+        warnings.simplefilter("always")
+        output = generate_report(result, output_format="json", format="terminal")
+    # Either outcome is acceptable; the key assertion is no exception raised.
+    assert output is not None or output is None

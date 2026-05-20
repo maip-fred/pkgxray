@@ -46,12 +46,19 @@ _warned_no_tomllib = False
 
 
 def _find_line(content: str, *search_strings: str) -> int:
-    """Retorna el número de línea (base 1) de la primera línea que contiene algún string.
+    """Returns the line number (1-based) of the first non-comment line that
+    contains any of the search strings.
 
-    Aproximación de mejor esfuerzo — los parsers TOML/INI no exponen números de línea.
-    Retorna 0 si ninguno de los strings se encuentra.
+    Skips lines that start with '#' (TOML/INI comments) or ';' (INI comments)
+    after stripping leading whitespace.  Returns 0 if no match is found.
+
+    This is a best-effort approximation: parsers (tomllib, configparser) do not
+    expose line numbers, so we search the raw text after parsing.
     """
     for i, line in enumerate(content.splitlines(), 1):
+        stripped = line.strip()
+        if stripped.startswith("#") or stripped.startswith(";"):
+            continue
         if any(s in line for s in search_strings):
             return i
     return 0
@@ -226,8 +233,9 @@ class ConfigFileAnalyzer(BaseAnalyzer):
         *,
         tree=None,
         parent_map=None,
+        aliases=None,   # accepted but not used by this analyser
     ) -> List[Finding]:
-        # tree y parent_map no se usan: los configs son TOML/INI, no AST Python
+        # tree, parent_map, and aliases no se usan: los configs son TOML/INI, no AST Python
         lower = filename.lower()
         if lower.endswith("pyproject.toml"):
             return _check_pyproject(source_code, filename)

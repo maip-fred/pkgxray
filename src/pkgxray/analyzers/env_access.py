@@ -56,6 +56,7 @@ class EnvAccessAnalyzer(BaseAnalyzer):
         *,
         tree=None,
         parent_map=None,
+        aliases=None,   # accepted but not used by this analyser
     ) -> List[Finding]:
         """Analiza el código fuente en busca de accesos a variables de entorno.
 
@@ -112,8 +113,12 @@ class EnvAccessAnalyzer(BaseAnalyzer):
                 if not isinstance(func, ast.Attribute):
                     continue
 
-                # os.getenv("KEY") o anything.getenv("KEY")
+                # os.getenv("KEY") — only flag when the receiver is 'os'
                 if func.attr == "getenv":
+                    # Require the receiver to be 'os' to avoid false positives on
+                    # config.getenv(), parser.getenv(), etc.
+                    if not (isinstance(func.value, ast.Name) and func.value.id == "os"):
+                        continue
                     if node.args and isinstance(node.args[0], ast.Constant):
                         base_sev = _classify_env_key(str(node.args[0].value))
                     else:

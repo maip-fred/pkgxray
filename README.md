@@ -84,8 +84,8 @@ for finding in result.findings:
     print(f"  {finding.description}")
 
 # Exportar
-json_report = generate_report(result, format="json")
-generate_report(result, format="html", output_path="reporte.html")
+json_report = generate_report(result, output_format="json")
+generate_report(result, output_format="html", output_path="reporte.html")
 ```
 
 ---

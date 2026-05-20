@@ -112,3 +112,34 @@ def test_class_body_env_access_escalated():
     code = 'class Config:\n    key = os.getenv("AWS_SECRET_ACCESS_KEY")'
     findings = analyzer.analyze(code, 'test.py')
     assert any(f.severity == Severity.CRITICAL for f in findings)
+
+
+def test_getenv_on_non_os_object_not_flagged():
+    """config.getenv(), parser.getenv() etc. must NOT be flagged."""
+    analyzer = EnvAccessAnalyzer()
+    code = (
+        "class Config:\n"
+        "    def getenv(self, key): return None\n"
+        "cfg = Config()\n"
+        "val = cfg.getenv('SECRET_KEY')\n"
+    )
+    findings = analyzer.analyze(code, "test.py")
+    assert findings == [], f"Unexpected findings: {findings}"
+
+
+def test_os_getenv_still_flagged():
+    """os.getenv() must still be detected after the receiver check is added."""
+    analyzer = EnvAccessAnalyzer()
+    # Module-level os.getenv() with a sensitive key escalates to CRITICAL
+    code = "import os\ntoken = os.getenv('API_KEY')\n"
+    findings = analyzer.analyze(code, "test.py")
+    assert len(findings) == 1
+    assert findings[0].severity in (Severity.HIGH, Severity.CRITICAL)
+
+
+def test_parser_getenv_not_flagged():
+    """parser.getenv() must not generate a finding."""
+    analyzer = EnvAccessAnalyzer()
+    code = "value = parser.getenv('DATABASE_URL')\n"
+    findings = analyzer.analyze(code, "test.py")
+    assert findings == []

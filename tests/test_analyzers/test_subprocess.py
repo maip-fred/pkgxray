@@ -74,3 +74,27 @@ def test_class_body_treated_as_module_level():
     findings = analyzer.analyze(code, 'test.py')
     critical = [f for f in findings if f.severity == Severity.CRITICAL and "run" in f.description]
     assert len(critical) >= 1
+
+
+def test_aliased_module_detected():
+    """import subprocess as sp; sp.run([...]) must be detected."""
+    analyzer = SubprocessAnalyzer()
+    code = "import subprocess as sp\nsp.run(['curl', 'http://evil.com'])\n"
+    findings = analyzer.analyze(code, "test.py")
+    assert len(findings) >= 1, "Aliased subprocess.run must be detected"
+
+
+def test_aliased_os_detected():
+    """import os as operating_system; operating_system.system('id') must be detected."""
+    analyzer = SubprocessAnalyzer()
+    code = "import os as operating_system\noperating_system.system('id')\n"
+    findings = analyzer.analyze(code, "test.py")
+    assert len(findings) >= 1, "Aliased os.system must be detected"
+
+
+def test_from_import_alias_detected():
+    """from subprocess import run as subrun; subrun(['id']) must be detected."""
+    analyzer = SubprocessAnalyzer()
+    code = "from subprocess import run as subrun\nsubrun(['id'])\n"
+    findings = analyzer.analyze(code, "test.py")
+    assert len(findings) >= 1, "from-import alias must be detected"

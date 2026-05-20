@@ -35,6 +35,7 @@ class SetupScriptAnalyzer(BaseAnalyzer):
         *,
         tree=None,
         parent_map=None,
+        aliases=None,   # accepted but not used by this analyser
     ) -> List[Finding]:
         """Analiza setup.py en busca de hooks peligrosos de post-instalación.
 

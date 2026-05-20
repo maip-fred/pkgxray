@@ -3,7 +3,10 @@
 import ast
 from typing import List
 
-from pkgxray.analyzers.base import BaseAnalyzer, Finding, Severity, build_parent_map, is_module_level
+from pkgxray.analyzers.base import (
+    BaseAnalyzer, Finding, Severity, build_parent_map, is_module_level,
+    collect_import_aliases,
+)
 
 _SEVERITY_MAP = {
     "eval": Severity.HIGH,
@@ -25,6 +28,7 @@ class CodeExecAnalyzer(BaseAnalyzer):
         *,
         tree=None,
         parent_map=None,
+        aliases=None,
     ) -> List[Finding]:
         """Analiza el código fuente en busca de llamadas a funciones de ejecución dinámica.
 
@@ -40,6 +44,8 @@ class CodeExecAnalyzer(BaseAnalyzer):
         findings = []
         if parent_map is None:
             parent_map = build_parent_map(tree)
+        if aliases is None:
+            aliases = collect_import_aliases(tree)
 
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
@@ -47,19 +53,22 @@ class CodeExecAnalyzer(BaseAnalyzer):
             func = node.func
             if not isinstance(func, ast.Name):
                 continue
-            if func.id not in _DANGEROUS_FUNCS:
+            # Check if a known dangerous function has been imported under an alias
+            canonical = aliases.get(func.id, func.id)
+            if canonical not in _DANGEROUS_FUNCS:
                 continue
+            func_name = canonical
 
             line_num = node.lineno
             snippet = lines[line_num - 1].strip()[:200] if line_num <= len(lines) else ""
             at_module = is_module_level(node, parent_map)
-            severity = Severity.CRITICAL if at_module else _SEVERITY_MAP[func.id]
+            severity = Severity.CRITICAL if at_module else _SEVERITY_MAP[func_name]
             suffix = " — ejecutado al nivel del módulo, corre al importar" if at_module else ""
 
             findings.append(
                 Finding(
                     severity=severity,
-                    description=f"Se detectó llamada a {func.id}() — permite ejecución arbitraria de código{suffix}",
+                    description=f"Se detectó llamada a {func_name}() — permite ejecución arbitraria de código{suffix}",
                     filename=filename,
                     line_number=line_num,
                     code_snippet=snippet,
