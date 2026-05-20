@@ -1,10 +1,13 @@
 """Orquestador principal del escáner de pkgxray."""
 
 import ast
+import logging
 import shutil
 import tempfile
 from datetime import datetime, timezone
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 from pkgxray import downloader, extractor, scorer
 from pkgxray.analyzers import get_all_analyzers
@@ -81,8 +84,12 @@ def scan(package_name: str, version: Optional[str] = None) -> ScanResult:
                 try:
                     findings = analyzer.analyze(extracted_file.content, extracted_file.filename)
                     all_findings.extend(findings)
-                except Exception:
+                except Exception as e:
                     # Un fallo individual en un analizador no debe abortar el escaneo completo
+                    logger.warning(
+                        "Analyzer '%s' falló en '%s': %s",
+                        analyzer.name, extracted_file.filename, e,
+                    )
                     continue
 
         # Paso 4: Puntaje

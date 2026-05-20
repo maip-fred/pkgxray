@@ -1,5 +1,7 @@
 """Interfaz de línea de comandos para pkgxray."""
 
+import logging
+
 import click
 from rich.console import Console
 
@@ -27,20 +29,45 @@ def main():
     help="Formato de salida del reporte",
 )
 @click.option("--output", "-o", default=None, help="Guardar el reporte en un archivo")
-def scan_cmd(package_name, version, output_format, output):
+@click.option(
+    "--fail-above", type=int, default=None,
+    help="Salir con código 1 si el score >= este valor (útil en pipelines CI/CD)",
+)
+@click.option(
+    "--verbose", is_flag=True, default=False,
+    help="Mostrar logs de depuración (fallos de analizadores, pasos del pipeline)",
+)
+def scan_cmd(package_name, version, output_format, output, fail_above, verbose):
     """Analiza un paquete de PyPI en busca de comportamiento sospechoso."""
+    if verbose:
+        logging.basicConfig(
+            level=logging.DEBUG,
+            format="%(levelname)s %(name)s: %(message)s",
+        )
+
     try:
         console.print(f"\n[bold]Analizando [cyan]{package_name}[/cyan]...[/bold]\n")
         result = scan(package_name, version)
         generate_report(result, format=output_format, output_path=output)
+
         if output:
             console.print(f"\n[bold]Reporte guardado en [green]{output}[/green][/bold]")
+
+        if fail_above is not None and result.risk_score >= fail_above:
+            console.print(
+                f"\n[red bold]Score {result.risk_score} >= umbral {fail_above}"
+                f" — saliendo con código 1 (fail-above activado)[/red bold]"
+            )
+            raise SystemExit(1)
+
     except PackageNotFoundError:
         console.print(f"[red]Error: El paquete '{package_name}' no fue encontrado en PyPI[/red]")
         raise SystemExit(1)
     except DownloadError as e:
         console.print(f"[red]Error al descargar el paquete: {e}[/red]")
         raise SystemExit(1)
+    except SystemExit:
+        raise
     except Exception as e:
         console.print(f"[red]Error inesperado: {e}[/red]")
         raise SystemExit(1)
