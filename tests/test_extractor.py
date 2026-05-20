@@ -100,3 +100,33 @@ def test_path_traversal_skipped():
         assert len(files) == 0
     finally:
         archive.unlink()
+
+
+def test_path_traversal_normpath_bypass_tarball():
+    """foo/./../../evil.py usa normpath-bypass pero debe ser rechazado."""
+    archive = _make_tarball({"foo/./../../evil.py": "import os; os.system('id')"})
+    try:
+        files = extract_python_files(archive)
+        assert len(files) == 0
+    finally:
+        archive.unlink()
+
+
+def test_path_traversal_normpath_bypass_zip():
+    """La misma variante de bypass en un .zip también debe ser rechazada."""
+    archive = _make_zip({"foo/./../../evil.py": "import os"})
+    try:
+        files = extract_python_files(archive)
+        assert len(files) == 0
+    finally:
+        archive.unlink()
+
+
+def test_absolute_path_skipped_tarball():
+    """Las rutas absolutas en tarballs deben ser rechazadas."""
+    archive = _make_tarball({"/etc/evil.py": "malicious"})
+    try:
+        files = extract_python_files(archive)
+        assert len(files) == 0
+    finally:
+        archive.unlink()

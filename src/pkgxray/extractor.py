@@ -1,6 +1,7 @@
 """Extrae archivos Python de los archivos comprimidos de paquetes descargados."""
 
 import io
+import os
 import tarfile
 import zipfile
 from pathlib import Path
@@ -49,8 +50,10 @@ def _extract_from_tarball(archive_path: Path) -> List[ExtractedFile]:
             for member in tf.getmembers():
                 if not member.isfile():
                     continue
-                # Seguridad: ignorar intentos de path traversal
-                if ".." in member.name:
+                # Seguridad: normalizar la ruta y rechazar cualquier intento de
+                # path traversal, incluyendo la variante foo/./../../etc/passwd
+                normalized = os.path.normpath(member.name)
+                if normalized.startswith("..") or os.path.isabs(normalized):
                     continue
                 # Seguridad: ignorar archivos demasiado grandes
                 if member.size > MAX_FILE_SIZE:
@@ -92,8 +95,10 @@ def _extract_from_zip(archive_path: Path) -> List[ExtractedFile]:
             for info in zf.infolist():
                 if info.is_dir():
                     continue
-                # Seguridad: ignorar intentos de path traversal
-                if ".." in info.filename:
+                # Seguridad: normalizar la ruta y rechazar cualquier intento de
+                # path traversal, incluyendo la variante foo/./../../etc/passwd
+                normalized = os.path.normpath(info.filename)
+                if normalized.startswith("..") or os.path.isabs(normalized):
                     continue
                 # Seguridad: ignorar archivos demasiado grandes
                 if info.file_size > MAX_FILE_SIZE:
