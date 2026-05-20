@@ -9,6 +9,7 @@ from typing import Optional
 from pkgxray import downloader, extractor, scorer
 from pkgxray.analyzers import get_all_analyzers
 from pkgxray.analyzers.base import ScanResult
+from pkgxray.analyzers.config_files import ConfigFileAnalyzer
 from pkgxray.analyzers.setup_scripts import SetupScriptAnalyzer
 from pkgxray.downloader import DownloadError, PackageNotFoundError
 
@@ -65,10 +66,17 @@ def scan(package_name: str, version: Optional[str] = None) -> ScanResult:
                     })
                     continue
 
+            lower_fn = extracted_file.filename.lower()
+            is_config = lower_fn.endswith("pyproject.toml") or lower_fn.endswith("setup.cfg")
+
             for analyzer in analyzers:
+                if is_config:
+                    # Config files (TOML/INI) are not Python — solo van a ConfigFileAnalyzer
+                    if not isinstance(analyzer, ConfigFileAnalyzer):
+                        continue
                 # SetupScriptAnalyzer solo corre en archivos setup.py
-                if isinstance(analyzer, SetupScriptAnalyzer):
-                    if "setup.py" not in extracted_file.filename.lower():
+                elif isinstance(analyzer, SetupScriptAnalyzer):
+                    if "setup.py" not in lower_fn:
                         continue
                 try:
                     findings = analyzer.analyze(extracted_file.content, extracted_file.filename)

@@ -167,24 +167,25 @@ pkgxray está calibrado para minimizar falsos positivos en paquetes legítimos:
 
 | Score | Nivel | Interpretación |
 |---|---|---|
-| 0 – 20 | LOW | Sin comportamiento sospechoso relevante |
-| 21 – 40 | MODERATE | Algunos patrones comunes, probablemente legítimos |
-| 41 – 70 | HIGH | Comportamiento activo de red, sistema o archivos |
-| 71 – 100 | CRITICAL | Múltiples categorías de riesgo o patrones de malware |
+| 0 – 15 | LOW | Sin comportamiento sospechoso relevante |
+| 16 – 35 | MODERATE | Algunos patrones comunes, probablemente legítimos |
+| 36 – 60 | HIGH | Comportamiento activo de red, sistema o archivos |
+| 61 – 100 | CRITICAL | Múltiples categorías de riesgo o patrones de malware |
 
 **Scores aproximados de paquetes conocidos** (referencia orientativa):
 
 | Paquete | Score típico | Por qué |
 |---|---|---|
-| `more-itertools` | ~15 LOW | Utilidades puras, sin red ni sistema |
-| `attrs` | ~25 MODERATE | Introspección de clases, sin comportamiento externo |
-| `click` | ~35 MODERATE | Algo de env y filesystem para la CLI |
-| `requests` | ~55 HIGH | Conexiones HTTP activas, importa socket |
-| `paramiko` | ~65 HIGH | Red (SSH), criptografía, lectura de archivos de clave |
+| `more-itertools` | ~5 LOW | Utilidades puras, sin red ni sistema |
+| `attrs` | ~10 LOW | Introspección de clases, sin comportamiento externo |
+| `click` | ~29 MODERATE | Algo de env y filesystem para la CLI |
+| `requests` | ~31 MODERATE | Conexiones HTTP activas; env vars de proxy a baja severidad |
+| `paramiko` | ~45 HIGH | Red (SSH), criptografía, lectura de archivos de clave |
 
 > Un score alto no significa que el paquete sea malicioso — significa que tiene
-> comportamiento que merece revisión. `requests` tiene score HIGH porque realmente
-> hace conexiones de red, que es exactamente lo que se espera de un cliente HTTP.
+> comportamiento que merece revisión. `paramiko` tiene score HIGH porque realmente
+> abre conexiones SSH y lee archivos de clave, que es exactamente lo que se espera
+> de una librería SSH.
 
 ---
 

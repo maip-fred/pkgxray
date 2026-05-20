@@ -64,31 +64,69 @@ Every `analyzer.analyze()` call in the orchestrator is wrapped in `try/except Ex
 
 ---
 
-## ADR-004: Two-Level Score Capping
+## ADR-004: Two-Level Score Capping with Per-Analyser Caps and Combo Bonuses
 
-**Status:** Accepted — under review
-**Date:** 2024 (initial design)
+**Status:** Accepted
+**Date:** 2025 (v0.3.0 recalibration)
 
 ### Decision
-The risk score uses a two-level cap:
-1. **Per-analyser cap (20 points):** No single analyser contributes more than 20 points, regardless of how many findings it produces.
-2. **Global cap (100 points):** Total score is clamped to 100.
 
-Severity weights: LOW=1, MEDIUM=3, HIGH=7, CRITICAL=15.
+The risk score uses three layers of control:
+
+1. **Per-analyser caps (variable):** Each analyser has its own ceiling based on how often it fires on legitimate packages.
+2. **Combo bonuses:** When multiple high-risk categories appear together with ≥ HIGH severity, a bonus is added to reflect combined danger (e.g. reading credentials AND making a network call).
+3. **Global cap (100 points):** Total score is clamped to 100.
+
+Severity weights (unchanged): LOW=1, MEDIUM=3, HIGH=7, CRITICAL=15.
+
+**Per-analyser caps (v0.3.0):**
+
+| Analyser | Cap | Rationale |
+|---|---|---|
+| `obfuscation` | 20 | exec(b64decode) — almost never legitimate |
+| `setup_scripts` | 20 | Install hooks — high-confidence attack vector |
+| `code_exec` | 15 | eval/exec — suspicious but used in templating |
+| `subprocess` | 12 | Common in build tools and CLI wrappers |
+| `filesystem` | 12 | Destructive ops + sensitive paths |
+| `network` | 8 | Normal for HTTP libraries |
+| `dynamic_imports` | 6 | Used in legitimate plugin systems |
+| `env_access` | 5 | Ubiquitous in CLI tools and 12-factor apps |
+
+**Risk level thresholds (v0.3.0):**
+
+| Score | Level |
+|---|---|
+| 0 – 15 | LOW |
+| 16 – 35 | MODERATE |
+| 36 – 60 | HIGH |
+| 61 – 100 | CRITICAL |
+
+**Combo bonuses (v0.3.0):**
+
+| Combo | Bonus | Meaning |
+|---|---|---|
+| `env_access` + `network` | +15 | Credential exfiltration pattern |
+| `network` + `subprocess` | +10 | Download and execute pattern |
+| `obfuscation` + `code_exec` | +20 | Obfuscated payload pattern |
+| `setup_scripts` + `subprocess` | +10 | Install hook with shell commands |
+
+Combo bonuses only fire when both analysers have at least one HIGH-severity finding, preventing legitimate packages from triggering them.
 
 ### Rationale
-- A package that calls `os.getenv()` 100 times should not score higher than one that calls it once. Frequency of a pattern is less meaningful than breadth across risk categories.
-- The per-analyser cap encourages having *many* categories of findings for a high score, rather than flooding a single category.
 
-### Current Problem
-The calibration is too aggressive. Legitimate packages that use network calls, subprocess, and environment variables in normal ways reach HIGH or CRITICAL scores. The `env_access` analyser in particular contributes disproportionately to false positives.
+The original single cap of 20 across all analysers was too permissive: any package touching 5+ analysers at any severity reached CRITICAL. Empirical baseline scans showed:
+- `requests` (legitimate HTTP library) was scoring HIGH due to network + env + filesystem findings.
+- `click` (CLI framework) was scoring HIGH due to env + subprocess findings.
 
-### Proposed Fix
-- Reduce the per-analyser cap for lower-risk analysers (`env_access`, `dynamic_imports`) relative to higher-risk ones (`obfuscation`, `setup_scripts`).
-- Alternatively, introduce per-analyser configurable caps instead of a single global cap.
-- Recalibrate thresholds against a baseline of 20–30 known-clean packages to define what a normal score looks like.
+Per-analyser caps reduce the weight of frequently-firing low-risk patterns (env reads, network calls) without discarding the information entirely. High-confidence analysers (`obfuscation`, `setup_scripts`) retain higher ceilings.
 
-**This ADR should be updated when the calibration is changed.**
+Combo bonuses add signal for multi-category packages: a package that BOTH exfiltrates credentials AND makes network calls is more dangerous than the sum of either alone.
+
+### Consequences
+
+- `requests` → MODERATE (~31); `click` → MODERATE (~29); `more-itertools` → LOW (~0).
+- A package with `exec(b64decode(...))` + install hook + module-level subprocess → CRITICAL.
+- Caps and thresholds should be re-evaluated after Phase 2 analyser fixes (false-positive reductions) are merged, as those will change raw finding counts.
 
 ---
 

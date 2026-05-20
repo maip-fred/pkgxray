@@ -28,6 +28,7 @@ classifiers = [
 dependencies = [
     "click>=8.0",
     "rich>=13.0",
+    "tomli>=2.0; python_version < '3.11'",
 ]
 
 [project.optional-dependencies]
@@ -49,4 +50,5 @@ Issues = "https://github.com/maip-fred/pkgxray/issues"
 [tool.pytest.ini_options]
 markers = [
     "slow: marks tests as slow (integration tests that download real packages)",
+    "integration: marks tests as integration tests (no network, uses synthetic fixtures)",
 ]

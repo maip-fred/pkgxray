@@ -1,5 +1,6 @@
 """Genera reportes de seguridad en formato terminal, JSON y HTML."""
 
+import html
 import json
 from pathlib import Path
 from typing import Optional
@@ -167,27 +168,51 @@ def generate_html_report(result: ScanResult) -> str:
     for f in result.findings:
         sev = f.severity.value
         bg = sev_colors.get(sev, "#ecf0f1")
-        snippet = f.code_snippet.replace("<", "&lt;").replace(">", "&gt;")
+        esc_analyzer  = html.escape(f.analyzer_name)
+        esc_filename  = html.escape(f.filename)
+        esc_desc      = html.escape(f.description)
+        esc_snippet   = html.escape(f.code_snippet[:120])
         rows_html += f"""
         <tr style="border-bottom:1px solid #dee2e6;">
           <td style="padding:8px;font-weight:bold;color:{bg};">{sev.upper()}</td>
-          <td style="padding:8px;">{f.analyzer_name}</td>
-          <td style="padding:8px;font-size:0.85em;word-break:break-all;">{f.filename}</td>
+          <td style="padding:8px;">{esc_analyzer}</td>
+          <td style="padding:8px;font-size:0.85em;word-break:break-all;">{esc_filename}</td>
           <td style="padding:8px;text-align:right;">{f.line_number}</td>
-          <td style="padding:8px;">{f.description}</td>
-          <td style="padding:8px;font-family:monospace;font-size:0.8em;">{snippet[:120]}</td>
+          <td style="padding:8px;">{esc_desc}</td>
+          <td style="padding:8px;font-family:monospace;font-size:0.8em;">{esc_snippet}</td>
         </tr>"""
 
     no_findings_msg = ""
     if not result.findings:
         no_findings_msg = '<p style="color:#2ecc71;font-weight:bold;font-size:1.1em;">¡No se encontraron patrones sospechosos!</p>'
 
+    esc_pkg     = html.escape(result.package_name)
+    esc_version = html.escape(result.version)
+
+    skipped_warning = ""
+    if result.skipped_files:
+        # Escape the full path — do NOT split on "/" first: adversarial filenames
+        # like "<script>...</script>.py" contain "/" in "</script>" which would
+        # produce a wrong basename and break the escaping.
+        skipped_names = ", ".join(
+            html.escape(s["filename"])
+            for s in result.skipped_files[:5]
+        )
+        ellipsis = "..." if len(result.skipped_files) > 5 else ""
+        skipped_warning = (
+            f'<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:8px;'
+            f'padding:12px 24px;margin-bottom:20px;">'
+            f'<strong>Advertencia:</strong> {len(result.skipped_files)} archivo(s) no pudieron '
+            f'analizarse por errores de sintaxis o versión de Python incompatible: '
+            f'{skipped_names}{ellipsis}</div>'
+        )
+
     return f"""<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>pkgxray — Reporte de Seguridad — {result.package_name}</title>
+  <title>pkgxray — Reporte de Seguridad — {esc_pkg}</title>
   <style>
     body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; padding: 20px; background: #f8f9fa; color: #212529; }}
     .container {{ max-width: 1100px; margin: 0 auto; }}
@@ -203,7 +228,7 @@ def generate_html_report(result: ScanResult) -> str:
 <div class="container">
   <div class="header">
     <h1 style="margin:0 0 6px 0;">pkgxray — Reporte de Seguridad</h1>
-    <div><strong>Paquete:</strong> {result.package_name} &nbsp; <strong>Versión:</strong> {result.version} &nbsp; <strong>Fecha:</strong> {result.scan_date}</div>
+    <div><strong>Paquete:</strong> {esc_pkg} &nbsp; <strong>Versión:</strong> {esc_version} &nbsp; <strong>Fecha:</strong> {result.scan_date}</div>
   </div>
   <div class="score-box">
     <div style="font-size:2em;font-weight:bold;">{result.risk_score}/100</div>
@@ -217,7 +242,7 @@ def generate_html_report(result: ScanResult) -> str:
     <span style="color:#f39c12;">{result.summary['medium']} medio(s)</span> &nbsp;
     <span style="color:#2ecc71;">{result.summary['low']} bajo(s)</span>
   </div>
-  {f'<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:12px 24px;margin-bottom:20px;"><strong>Advertencia:</strong> {len(result.skipped_files)} archivo(s) no pudieron analizarse por errores de sintaxis o versión de Python incompatible: ' + ', '.join(s["filename"].split("/")[-1] for s in result.skipped_files[:5]) + ('...' if len(result.skipped_files) > 5 else '') + '</div>' if result.skipped_files else ''}
+  {skipped_warning}
   {no_findings_msg}
   {'<table><thead><tr><th>Severidad</th><th>Analizador</th><th>Archivo</th><th>Línea</th><th>Descripción</th><th>Fragmento</th></tr></thead><tbody>' + rows_html + '</tbody></table>' if result.findings else ''}
   <div class="footer">Generado por <strong>pkgxray</strong></div>

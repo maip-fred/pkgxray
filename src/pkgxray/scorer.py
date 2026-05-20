@@ -36,6 +36,19 @@ ANALYZER_CAPS = {
 }
 _DEFAULT_CAP = 10  # fallback for any analyzer not listed above
 
+# Bonus points when a package combines multiple high-risk analyzer categories.
+# Each combo only fires when BOTH sides have at least one HIGH-severity finding —
+# this prevents legitimate packages (e.g. requests, which has network + env_access
+# at LOW/MEDIUM) from triggering the bonus.  Revisit this gate after Phase 2
+# analyzer fixes reduce false positives further.
+DANGEROUS_COMBOS = {
+    frozenset({"env_access", "network"}): 25,       # credential exfiltration
+    frozenset({"network", "subprocess"}): 10,        # download + execute
+    frozenset({"obfuscation", "code_exec"}): 20,     # obfuscated payload
+    frozenset({"setup_scripts", "subprocess"}): 10,  # install hook + shell commands
+}
+_COMBO_MIN_WEIGHT = SEVERITY_WEIGHTS[Severity.HIGH]  # 7 — both sides must have ≥ HIGH
+
 
 def calculate_risk_score(findings: List[Finding]) -> Tuple[int, str]:
     """Calcula un puntaje de riesgo de 0 a 100 a partir de una lista de hallazgos.
@@ -57,13 +70,22 @@ def calculate_risk_score(findings: List[Finding]) -> Tuple[int, str]:
         return 0, "LOW"
 
     weight_by_analyzer: dict = defaultdict(int)
+    max_weight_by_analyzer: dict = defaultdict(int)
     for f in findings:
-        weight_by_analyzer[f.analyzer_name] += SEVERITY_WEIGHTS.get(f.severity, 0)
+        w = SEVERITY_WEIGHTS.get(f.severity, 0)
+        weight_by_analyzer[f.analyzer_name] += w
+        if w > max_weight_by_analyzer[f.analyzer_name]:
+            max_weight_by_analyzer[f.analyzer_name] = w
 
     capped_total = sum(
         min(w, ANALYZER_CAPS.get(name, _DEFAULT_CAP))
         for name, w in weight_by_analyzer.items()
     )
+
+    for combo, bonus in DANGEROUS_COMBOS.items():
+        if all(max_weight_by_analyzer.get(a, 0) >= _COMBO_MIN_WEIGHT for a in combo):
+            capped_total += bonus
+
     score = min(100, capped_total)
 
     if score <= 15:
