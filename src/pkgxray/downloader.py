@@ -5,8 +5,14 @@ import shutil
 import tempfile
 import urllib.error
 import urllib.request
+from importlib.metadata import version as _pkg_version
 from pathlib import Path
 from typing import Optional, Tuple
+
+try:
+    _PKGXRAY_VERSION = _pkg_version("pkgxray")
+except Exception:
+    _PKGXRAY_VERSION = "0.3.0"
 
 
 class PackageNotFoundError(Exception):
@@ -41,7 +47,7 @@ def get_package_info(package_name: str, version: Optional[str] = None) -> dict:
         url = PYPI_API_URL.format(package_name=package_name)
 
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "pkgxray/0.1.0"})
+        req = urllib.request.Request(url, headers={"User-Agent": f"pkgxray/{_PKGXRAY_VERSION}"})
         with urllib.request.urlopen(req, timeout=30) as response:
             return json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as e:

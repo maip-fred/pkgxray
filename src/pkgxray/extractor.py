@@ -71,6 +71,7 @@ def _extract_from_tarball(archive_path: Path) -> List[ExtractedFile]:
                             filename=member.name,
                             content=content,
                             is_setup=_is_setup_file(member.name),
+                            is_config=_is_config_file(member.name),
                         )
                     )
                 except Exception:
@@ -113,6 +114,7 @@ def _extract_from_zip(archive_path: Path) -> List[ExtractedFile]:
                             filename=info.filename,
                             content=content,
                             is_setup=_is_setup_file(info.filename),
+                            is_config=_is_config_file(info.filename),
                         )
                     )
                 except Exception:
@@ -139,6 +141,11 @@ def _is_python_file(filename: str) -> bool:
 
 
 def _is_setup_file(filename: str) -> bool:
-    """Retorna True si el archivo es un script de instalación (setup.py o setup.cfg)."""
+    """Retorna True si el archivo es setup.py (activa SetupScriptAnalyzer)."""
+    return Path(filename).name.lower() == "setup.py"
+
+
+def _is_config_file(filename: str) -> bool:
+    """Retorna True si el archivo es un config de paquete (activa ConfigFileAnalyzer)."""
     basename = Path(filename).name.lower()
-    return basename in {"setup.py", "setup.cfg"}
+    return basename in {"pyproject.toml", "setup.cfg"}

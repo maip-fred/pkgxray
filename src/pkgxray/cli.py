@@ -5,6 +5,7 @@ import logging
 import click
 from rich.console import Console
 
+from pkgxray import __version__
 from pkgxray.downloader import DownloadError, PackageNotFoundError
 from pkgxray.reporter import generate_report
 from pkgxray.scanner import scan
@@ -13,7 +14,7 @@ console = Console()
 
 
 @click.group()
-@click.version_option(version="0.1.0", prog_name="pkgxray")
+@click.version_option(version=__version__, prog_name="pkgxray")
 def main():
     """pkgxray - Analiza paquetes de PyPI en busca de comportamiento sospechoso antes de instalarlos."""
     pass

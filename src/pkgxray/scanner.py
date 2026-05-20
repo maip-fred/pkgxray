@@ -69,17 +69,14 @@ def scan(package_name: str, version: Optional[str] = None) -> ScanResult:
                     })
                     continue
 
-            lower_fn = extracted_file.filename.lower()
-            is_config = lower_fn.endswith("pyproject.toml") or lower_fn.endswith("setup.cfg")
-
             for analyzer in analyzers:
-                if is_config:
-                    # Config files (TOML/INI) are not Python — solo van a ConfigFileAnalyzer
+                if extracted_file.is_config:
+                    # Archivos de config (TOML/INI) no son Python — solo van a ConfigFileAnalyzer
                     if not isinstance(analyzer, ConfigFileAnalyzer):
                         continue
-                # SetupScriptAnalyzer solo corre en archivos setup.py
                 elif isinstance(analyzer, SetupScriptAnalyzer):
-                    if "setup.py" not in lower_fn:
+                    # SetupScriptAnalyzer solo corre en setup.py
+                    if not extracted_file.is_setup:
                         continue
                 try:
                     findings = analyzer.analyze(extracted_file.content, extracted_file.filename)

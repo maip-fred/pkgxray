@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from pkgxray.extractor import extract_python_files, _is_python_file, _is_setup_file
+from pkgxray.extractor import extract_python_files, _is_python_file, _is_setup_file, _is_config_file
 
 
 def _make_tarball(files: dict) -> Path:
@@ -86,10 +86,21 @@ def test_is_python_file():
 
 
 def test_is_setup_file():
+    """is_setup es True solo para setup.py — activa SetupScriptAnalyzer."""
     assert _is_setup_file("setup.py")
-    assert _is_setup_file("setup.cfg")
+    assert _is_setup_file("pkg/setup.py")
+    assert not _is_setup_file("setup.cfg")    # setup.cfg → ConfigFileAnalyzer
     assert not _is_setup_file("pyproject.toml")
     assert not _is_setup_file("module.py")
+
+
+def test_is_config_file():
+    """is_config es True para pyproject.toml y setup.cfg — activa ConfigFileAnalyzer."""
+    assert _is_config_file("pyproject.toml")
+    assert _is_config_file("setup.cfg")
+    assert _is_config_file("pkg/pyproject.toml")
+    assert not _is_config_file("setup.py")
+    assert not _is_config_file("module.py")
 
 
 def test_path_traversal_skipped():

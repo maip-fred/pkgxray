@@ -75,7 +75,8 @@ class BaseAnalyzer(ABC):
 class ExtractedFile:
     filename: str
     content: str
-    is_setup: bool = False
+    is_setup: bool = False   # True solo para setup.py → SetupScriptAnalyzer
+    is_config: bool = False  # True para pyproject.toml / setup.cfg → ConfigFileAnalyzer
 
 
 @dataclass
