@@ -152,6 +152,11 @@ def scan(package_name: str, version: Optional[str] = None) -> ScanResult:
         # Cache pinned-version results for reuse within this session.
         if version is not None:
             _SCAN_CACHE[(package_name.lower(), actual_version)] = result
+            # Also store under the user-supplied key in case it differs from the
+            # resolved version (e.g. "2" → "2.32.3"), so repeated calls with the
+            # same input string hit the cache correctly.
+            if version != actual_version:
+                _SCAN_CACHE[(package_name.lower(), version)] = result
 
         return result
 
