@@ -17,15 +17,19 @@ def build_parent_map(tree) -> dict:
 
 
 def is_module_level(node, parent_map: dict) -> bool:
-    """Retorna True si *node* no está anidado dentro de ninguna función o clase.
+    """Retorna True si *node* no está anidado dentro de ninguna función.
 
-    Las llamadas a nivel de módulo se ejecutan automáticamente al importar el
-    paquete — sin que el usuario las invoque — lo que las hace mucho más peligrosas.
+    Las llamadas a nivel de módulo (incluyendo cuerpos de clase) se ejecutan
+    automáticamente al importar el paquete — sin que el usuario las invoque —
+    lo que las hace mucho más peligrosas.
+
+    ClassDef NO es barrera: el cuerpo de una clase se ejecuta en tiempo de
+    importación, igual que el código suelto a nivel de módulo.
     """
     current_id = id(node)
     while current_id in parent_map:
         parent = parent_map[current_id]
-        if isinstance(parent, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        if isinstance(parent, (ast.FunctionDef, ast.AsyncFunctionDef)):
             return False
         current_id = id(parent)
     return True

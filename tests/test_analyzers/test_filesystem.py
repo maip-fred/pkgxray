@@ -20,17 +20,41 @@ def test_open_write_sensitive_path_flagged():
 
 
 def test_detects_os_remove():
+    """os.remove() al nivel del módulo → CRITICAL (se ejecuta al importar)."""
     analyzer = FilesystemAnalyzer()
-    findings = analyzer.analyze('import os\nos.remove("/tmp/file")', 'test.py')
-    high = [f for f in findings if f.severity == Severity.HIGH and "remove" in f.description]
-    assert len(high) >= 1
+    findings = analyzer.analyze('import os\nos.remove("/data/file")', 'test.py')
+    remove_findings = [f for f in findings if "remove" in f.description]
+    assert len(remove_findings) >= 1
+    assert any(f.severity == Severity.CRITICAL for f in remove_findings)
+
+
+def test_detects_os_remove_in_function():
+    """os.remove() dentro de una función → HIGH (no escalado)."""
+    analyzer = FilesystemAnalyzer()
+    code = 'def cleanup():\n    os.remove("/data/file")'
+    findings = analyzer.analyze(code, 'test.py')
+    remove_findings = [f for f in findings if "remove" in f.description]
+    assert len(remove_findings) >= 1
+    assert any(f.severity == Severity.HIGH for f in remove_findings)
 
 
 def test_detects_shutil_rmtree():
+    """shutil.rmtree() al nivel del módulo → CRITICAL."""
     analyzer = FilesystemAnalyzer()
-    findings = analyzer.analyze('import shutil\nshutil.rmtree("/tmp/dir")', 'test.py')
-    high = [f for f in findings if f.severity == Severity.HIGH]
-    assert len(high) >= 1
+    findings = analyzer.analyze('import shutil\nshutil.rmtree("/data/dir")', 'test.py')
+    rmtree_findings = [f for f in findings if "rmtree" in f.description]
+    assert len(rmtree_findings) >= 1
+    assert any(f.severity == Severity.CRITICAL for f in rmtree_findings)
+
+
+def test_detects_shutil_rmtree_in_function():
+    """shutil.rmtree() dentro de una función → HIGH."""
+    analyzer = FilesystemAnalyzer()
+    code = 'def cleanup():\n    shutil.rmtree("/data/dir")'
+    findings = analyzer.analyze(code, 'test.py')
+    rmtree_findings = [f for f in findings if "rmtree" in f.description]
+    assert len(rmtree_findings) >= 1
+    assert any(f.severity == Severity.HIGH for f in rmtree_findings)
 
 
 def test_detects_sensitive_path_passwd():
@@ -64,3 +88,67 @@ def test_analyzer_name():
     analyzer = FilesystemAnalyzer()
     findings = analyzer.analyze('path = "/etc/passwd"', 'test.py')
     assert all(f.analyzer_name == "filesystem" for f in findings)
+
+
+# ── P2-01: receptor filtering (list.remove falso positivo) ───────────────────
+
+def test_list_remove_not_flagged():
+    """my_list.remove(x) no debe generar findings — no es una op. de filesystem."""
+    analyzer = FilesystemAnalyzer()
+    findings = analyzer.analyze('items = [1,2,3]\nitems.remove(2)', 'test.py')
+    remove_findings = [f for f in findings if "remove" in f.description]
+    assert len(remove_findings) == 0
+
+
+def test_set_remove_not_flagged():
+    """my_set.remove(x) no debe generar findings."""
+    analyzer = FilesystemAnalyzer()
+    findings = analyzer.analyze('s = {1,2}\ns.remove(1)', 'test.py')
+    remove_findings = [f for f in findings if "remove" in f.description]
+    assert len(remove_findings) == 0
+
+
+def test_path_unlink_flagged():
+    """Path('f').unlink() debe generar findings — receptor es Path."""
+    analyzer = FilesystemAnalyzer()
+    findings = analyzer.analyze('from pathlib import Path\nPath("evil.sh").unlink()', 'test.py')
+    unlink_findings = [f for f in findings if "unlink" in f.description]
+    assert len(unlink_findings) >= 1
+
+
+# ── P2-04: ClassDef no es barrera para is_module_level ───────────────────────
+
+def test_class_body_treated_as_module_level():
+    """shutil.rmtree() en cuerpo de clase → CRITICAL (corre al importar)."""
+    analyzer = FilesystemAnalyzer()
+    code = 'class Malicious:\n    shutil.rmtree("/root")'
+    findings = analyzer.analyze(code, 'test.py')
+    rmtree_findings = [f for f in findings if "rmtree" in f.description]
+    assert len(rmtree_findings) >= 1
+    assert any(f.severity == Severity.CRITICAL for f in rmtree_findings)
+
+
+# ── P2-06: rutas sensibles expandidas ────────────────────────────────────────
+
+def test_detects_kube_config():
+    analyzer = FilesystemAnalyzer()
+    findings = analyzer.analyze('path = "~/.kube/config"', 'test.py')
+    assert any(f.severity == Severity.CRITICAL for f in findings)
+
+
+def test_detects_npmrc():
+    analyzer = FilesystemAnalyzer()
+    findings = analyzer.analyze('path = "~/.npmrc"', 'test.py')
+    assert any(f.severity == Severity.HIGH for f in findings)
+
+
+def test_detects_pypirc():
+    analyzer = FilesystemAnalyzer()
+    findings = analyzer.analyze('path = "~/.pypirc"', 'test.py')
+    assert any(f.severity == Severity.HIGH for f in findings)
+
+
+def test_detects_bash_profile():
+    analyzer = FilesystemAnalyzer()
+    findings = analyzer.analyze('path = "~/.bash_profile"', 'test.py')
+    assert any(f.severity == Severity.HIGH for f in findings)

@@ -29,17 +29,35 @@ def test_detects_os_environ_get():
 
 
 def test_sensitive_variable_upgrades_severity():
+    """Variable sensible al nivel del módulo → CRITICAL (escalado)."""
     analyzer = EnvAccessAnalyzer()
     findings = analyzer.analyze('import os\nval = os.getenv("AWS_SECRET_KEY")', 'test.py')
+    critical = [f for f in findings if f.severity == Severity.CRITICAL]
+    assert len(critical) >= 1
+
+
+def test_sensitive_variable_in_function():
+    """Variable sensible dentro de función → HIGH (no escalado)."""
+    analyzer = EnvAccessAnalyzer()
+    code = 'def connect():\n    import os\n    val = os.getenv("AWS_SECRET_KEY")'
+    findings = analyzer.analyze(code, 'test.py')
     high = [f for f in findings if f.severity == Severity.HIGH]
     assert len(high) >= 1
 
 
 def test_sensitive_token_upgrades_severity():
+    """Variable con TOKEN al nivel del módulo → CRITICAL (escalado)."""
     analyzer = EnvAccessAnalyzer()
     findings = analyzer.analyze('import os\nkey = os.environ["API_TOKEN"]', 'test.py')
-    high = [f for f in findings if f.severity == Severity.HIGH]
-    assert len(high) >= 1
+    critical = [f for f in findings if f.severity == Severity.CRITICAL]
+    assert len(critical) >= 1
+
+
+def test_non_sensitive_at_module_level_stays_low():
+    """Variable no sensible al nivel del módulo → LOW (no se escala)."""
+    analyzer = EnvAccessAnalyzer()
+    findings = analyzer.analyze('import os\nval = os.getenv("HOME")', 'test.py')
+    assert all(f.severity == Severity.LOW for f in findings)
 
 
 def test_safe_code_no_findings():
@@ -58,3 +76,39 @@ def test_analyzer_name():
     analyzer = EnvAccessAnalyzer()
     findings = analyzer.analyze('import os\nval = os.getenv("X")', 'test.py')
     assert all(f.analyzer_name == "env_access" for f in findings)
+
+
+# ── P2-06: keywords expandidos ────────────────────────────────────────────────
+
+def test_github_token_is_sensitive():
+    """GITHUB_TOKEN debe ser HIGH (contiene 'TOKEN')."""
+    analyzer = EnvAccessAnalyzer()
+    code = 'def push():\n    import os\n    t = os.getenv("GITHUB_TOKEN")'
+    findings = analyzer.analyze(code, 'test.py')
+    assert any(f.severity == Severity.HIGH for f in findings)
+
+
+def test_anthropic_api_key_is_sensitive():
+    """ANTHROPIC_API_KEY debe ser HIGH (contiene 'API_KEY')."""
+    analyzer = EnvAccessAnalyzer()
+    code = 'def call_ai():\n    import os\n    k = os.getenv("ANTHROPIC_API_KEY")'
+    findings = analyzer.analyze(code, 'test.py')
+    assert any(f.severity == Severity.HIGH for f in findings)
+
+
+def test_stripe_key_is_sensitive():
+    """STRIPE_KEY debe ser HIGH (contiene 'STRIPE_KEY')."""
+    analyzer = EnvAccessAnalyzer()
+    code = 'def charge():\n    import os\n    k = os.getenv("STRIPE_KEY")'
+    findings = analyzer.analyze(code, 'test.py')
+    assert any(f.severity == Severity.HIGH for f in findings)
+
+
+# ── P2-04: ClassDef no es barrera ────────────────────────────────────────────
+
+def test_class_body_env_access_escalated():
+    """os.getenv(SECRET) en cuerpo de clase → CRITICAL (corre al importar)."""
+    analyzer = EnvAccessAnalyzer()
+    code = 'class Config:\n    key = os.getenv("AWS_SECRET_ACCESS_KEY")'
+    findings = analyzer.analyze(code, 'test.py')
+    assert any(f.severity == Severity.CRITICAL for f in findings)

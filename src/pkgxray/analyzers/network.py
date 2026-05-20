@@ -21,6 +21,21 @@ _SOCKET_LIKE_CALL_ATTRS = {"connect"}
 _DB_RECEIVERS_EXCLUDE = {"sqlite3", "psycopg2", "engine", "conn", "db", "cursor", "pool"}
 
 
+def _extract_receiver_name(node) -> str:
+    """Extrae el nombre del receptor de func.value en una llamada a método.
+
+    Cubre receptores simples y encadenados:
+      requests.get()       → Name('requests')            → 'requests'
+      self.session.get()   → Attribute(Name('self'), 'session') → 'session'
+      self.client.post()   → Attribute(Name('self'), 'client')  → 'client'
+    """
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        return node.attr
+    return ""
+
+
 class NetworkAnalyzer(BaseAnalyzer):
     name = "network"
     description = "Detecta conexiones de red y solicitudes HTTP"
@@ -69,7 +84,7 @@ class NetworkAnalyzer(BaseAnalyzer):
 
             # connect(): solo si el receptor no es claramente una BD
             elif attr in _SOCKET_LIKE_CALL_ATTRS:
-                receiver = func.value.id if isinstance(func.value, ast.Name) else ""
+                receiver = _extract_receiver_name(func.value)
                 if receiver not in _DB_RECEIVERS_EXCLUDE:
                     severity = Severity.CRITICAL if at_module else Severity.HIGH
                     findings.append(Finding(
@@ -81,10 +96,11 @@ class NetworkAnalyzer(BaseAnalyzer):
                         analyzer_name=self.name,
                     ))
 
-            # get/post/put/delete/patch/head: solo si el receptor es un cliente HTTP conocido
-            # Esto evita marcar dict.get(), config.get(), etc.
+            # get/post/put/delete/patch/head: solo si el receptor es un cliente HTTP conocido.
+            # El helper _extract_receiver_name resuelve cadenas de atributos para que
+            # self.session.get() también sea detectado (session ∈ _KNOWN_HTTP_RECEIVERS).
             elif attr in _HTTP_METHOD_ATTRS:
-                receiver = func.value.id if isinstance(func.value, ast.Name) else ""
+                receiver = _extract_receiver_name(func.value)
                 if receiver in _KNOWN_HTTP_RECEIVERS:
                     severity = Severity.CRITICAL if at_module else Severity.HIGH
                     findings.append(Finding(

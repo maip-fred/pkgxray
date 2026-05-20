@@ -78,3 +78,37 @@ def test_analyzer_name():
     code = 'def fetch():\n    requests.get("http://example.com")'
     findings = analyzer.analyze(code, 'test.py')
     assert all(f.analyzer_name == "network" for f in findings)
+
+
+# ── P2-02: atributos encadenados ──────────────────────────────────────────────
+
+def test_detects_chained_session_get():
+    """self.session.get(url) debe detectarse — receptor 'session' ∈ _KNOWN_HTTP_RECEIVERS."""
+    analyzer = NetworkAnalyzer()
+    code = 'def fetch(self, url):\n    return self.session.get(url)'
+    findings = analyzer.analyze(code, 'test.py')
+    high = [f for f in findings if f.severity == Severity.HIGH]
+    assert len(high) >= 1
+
+
+def test_detects_chained_client_post():
+    """self.client.post(url) debe detectarse — receptor 'client' ∈ _KNOWN_HTTP_RECEIVERS."""
+    analyzer = NetworkAnalyzer()
+    code = 'def send(self, url):\n    return self.client.post(url)'
+    findings = analyzer.analyze(code, 'test.py')
+    assert len(findings) >= 1
+
+
+def test_dict_get_not_flagged():
+    """dict.get(key) no debe generar findings — 'data' no es un cliente HTTP."""
+    analyzer = NetworkAnalyzer()
+    findings = analyzer.analyze('data = {"key": 1}\nval = data.get("key")', 'test.py')
+    assert len(findings) == 0
+
+
+def test_db_connect_not_flagged():
+    """self.db.connect() no debe generar findings — 'db' ∈ _DB_RECEIVERS_EXCLUDE."""
+    analyzer = NetworkAnalyzer()
+    code = 'def open_conn(self):\n    self.db.connect(host="localhost")'
+    findings = analyzer.analyze(code, 'test.py')
+    assert len(findings) == 0

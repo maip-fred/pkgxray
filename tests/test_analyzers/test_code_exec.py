@@ -58,3 +58,11 @@ def test_finding_has_line_number():
     code = 'x = 1\nexec("bad code")\n'
     findings = analyzer.analyze(code, 'test.py')
     assert findings[0].line_number == 2
+
+
+def test_class_body_treated_as_module_level():
+    """exec() en cuerpo de clase → CRITICAL (el cuerpo de clase corre al importar)."""
+    analyzer = CodeExecAnalyzer()
+    code = 'class Malicious:\n    exec("payload")'
+    findings = analyzer.analyze(code, 'test.py')
+    assert any(f.severity == Severity.CRITICAL for f in findings)

