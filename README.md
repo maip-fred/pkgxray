@@ -56,6 +56,12 @@ pkgxray scan requests --format html -o reporte.html
 
 # Analizar una versión específica
 pkgxray scan requests --version 2.28.0
+
+# CI/CD: salir con código 1 si el score >= 50 (bloquea instalación automática)
+pkgxray scan some-package --fail-above 50
+
+# Ver logs internos del pipeline (útil para depuración)
+pkgxray scan requests --verbose
 ```
 
 ### API de Python
@@ -126,8 +132,8 @@ pkgxray scan <paquete>
 |---|---|---|
 | `code_exec` | `eval()`, `exec()`, `compile()` | HIGH – CRITICAL |
 | `network` | `urlopen()`, `requests.get()`, `socket.connect()` | HIGH – CRITICAL |
-| `filesystem` | `os.remove()`, `shutil.rmtree()`, rutas sensibles (`/etc/passwd`, `~/.ssh/`, `~/.aws/`) | HIGH – CRITICAL |
-| `env_access` | `os.environ`, `os.getenv()`, acceso a API keys y tokens | LOW – HIGH |
+| `filesystem` | `os.remove()`, `shutil.rmtree()`, rutas sensibles (`/etc/passwd`, `~/.ssh/`, `~/.aws/`, `~/.kube/config`, `~/.npmrc`…) | HIGH – CRITICAL |
+| `env_access` | `os.environ`, `os.getenv()`, acceso a API keys, tokens, passwords y secrets | LOW – CRITICAL |
 | `subprocess` | `subprocess.Popen()`, `subprocess.run()`, `os.system()`, `os.execvp()` | HIGH – CRITICAL |
 | `obfuscation` | `exec(base64.b64decode(...))`, `bytes.fromhex()`, strings con escape hexadecimal | MEDIUM – CRITICAL |
 | `setup_scripts` | Hooks post-instalación en `setup.py` que sobreescriben `install.run()` | HIGH – CRITICAL |
@@ -160,6 +166,8 @@ pkgxray está calibrado para minimizar falsos positivos en paquetes legítimos:
 - `base64.b64decode(data)` — codificación estándar para auth headers, imágenes, TLS
 - `import os` en `setup.py` — casi todo setup.py lo importa legítimamente
 - `dict.get()`, `config.get()` — no se confunden con llamadas HTTP
+- `my_list.remove(x)` — no se confunde con `os.remove()` (filtrado por receptor)
+- `__import__("json")` — equivalente a `import json`, se clasifica como MEDIUM
 
 ---
 
