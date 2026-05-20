@@ -129,7 +129,7 @@ class TestScannerLogging:
         extracted = self._make_extracted_file()
 
         with patch("pkgxray.scanner.downloader.download_package", return_value=(archive, "1.0")):
-            with patch("pkgxray.scanner.extractor.extract_python_files", return_value=[extracted]):
+            with patch("pkgxray.scanner.extractor.extract_python_files", return_value=([extracted], 0)):
                 with patch("pkgxray.scanner.get_all_analyzers", return_value=[broken]):
                     with caplog.at_level(logging.WARNING, logger="pkgxray.scanner"):
                         from pkgxray.scanner import scan
@@ -149,7 +149,7 @@ class TestScannerLogging:
         extracted = self._make_extracted_file()
 
         with patch("pkgxray.scanner.downloader.download_package", return_value=(archive, "1.0")):
-            with patch("pkgxray.scanner.extractor.extract_python_files", return_value=[extracted]):
+            with patch("pkgxray.scanner.extractor.extract_python_files", return_value=([extracted], 0)):
                 with patch("pkgxray.scanner.get_all_analyzers", return_value=[broken]):
                     from pkgxray.scanner import scan
                     result = scan("test-pkg")

@@ -258,3 +258,44 @@ def test_generate_report_output_format_takes_precedence():
         output = generate_report(result, output_format="json", format="terminal")
     # Either outcome is acceptable; the key assertion is no exception raised.
     assert output is not None or output is None
+
+
+# ---------------------------------------------------------------------------
+# binary_files_found in JSON
+# ---------------------------------------------------------------------------
+
+def test_json_report_includes_binary_files_found():
+    """generate_json_report() must include binary_files_found field."""
+    result = _make_result()
+    result.binary_files_found = 3
+    data = json.loads(generate_json_report(result))
+    assert "binary_files_found" in data, "binary_files_found must appear in JSON output"
+    assert data["binary_files_found"] == 3
+
+
+def test_json_report_binary_files_found_zero_by_default():
+    """binary_files_found must be 0 when no binaries found."""
+    result = _make_result()
+    data = json.loads(generate_json_report(result))
+    assert data.get("binary_files_found", -1) == 0
+
+
+# ---------------------------------------------------------------------------
+# binary notice in HTML
+# ---------------------------------------------------------------------------
+
+def test_html_report_shows_binary_notice_when_binaries_found():
+    """generate_html_report() must include a binary notice when binary_files_found > 0."""
+    result = _make_result()
+    result.binary_files_found = 2
+    html_output = generate_html_report(result)
+    assert ".so" in html_output or "binario" in html_output or "binary" in html_output.lower(), \
+        "HTML report must mention binary files when binary_files_found > 0"
+
+
+def test_html_report_no_binary_notice_when_none_found():
+    """Binary notice must be absent when binary_files_found == 0."""
+    result = _make_result()
+    result.binary_files_found = 0
+    html_output = generate_html_report(result)
+    assert "binario(s) compilado(s)" not in html_output

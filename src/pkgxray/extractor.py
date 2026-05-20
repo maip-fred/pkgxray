@@ -4,7 +4,7 @@ import io
 import tarfile
 import zipfile
 from pathlib import Path, PurePosixPath
-from typing import List
+from typing import List, Tuple
 
 from pkgxray.analyzers.base import ExtractedFile
 
@@ -26,7 +26,7 @@ def _is_safe_archive_path(name: str) -> bool:
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5 MB
 
 
-def extract_python_files(archive_path: Path) -> List[ExtractedFile]:
+def extract_python_files(archive_path: Path) -> Tuple[List[ExtractedFile], int]:
     """Extrae los archivos fuente Python de un archivo de paquete.
 
     Soporta archivos .tar.gz, .tgz, .whl y .zip.
@@ -35,7 +35,8 @@ def extract_python_files(archive_path: Path) -> List[ExtractedFile]:
         archive_path: Ruta al archivo comprimido descargado.
 
     Returns:
-        Lista de objetos ExtractedFile con el contenido de los archivos.
+        Tupla (lista de ExtractedFile, número de archivos binarios encontrados).
+        Los binarios (.so/.pyd/.dll/.dylib) se cuentan pero no se extraen.
 
     Raises:
         ValueError: Si el formato del archivo no es soportado.
@@ -49,27 +50,21 @@ def extract_python_files(archive_path: Path) -> List[ExtractedFile]:
         raise ValueError(f"Formato de archivo no soportado: {archive_path.name}")
 
 
-def _extract_from_tarball(archive_path: Path) -> List[ExtractedFile]:
-    """Extrae archivos Python de un archivo .tar.gz.
-
-    Args:
-        archive_path: Ruta al tarball.
-
-    Returns:
-        Lista de objetos ExtractedFile.
-    """
+def _extract_from_tarball(archive_path: Path) -> Tuple[List[ExtractedFile], int]:
+    """Extrae archivos Python de un archivo .tar.gz y cuenta binarios."""
     extracted = []
+    binary_count = 0
     try:
         with tarfile.open(archive_path, "r:gz") as tf:
             for member in tf.getmembers():
                 if not member.isfile():
                     continue
-                # Seguridad: rechazar path traversal, incluyendo variantes con
-                # separadores mixtos (/, \) y secuencias ./.. en rutas de archivos.
                 if not _is_safe_archive_path(member.name):
                     continue
-                # Seguridad: ignorar archivos demasiado grandes
                 if member.size > MAX_FILE_SIZE:
+                    continue
+                if _is_binary_file(member.name):
+                    binary_count += 1
                     continue
                 if not _is_python_file(member.name):
                     continue
@@ -91,30 +86,24 @@ def _extract_from_tarball(archive_path: Path) -> List[ExtractedFile]:
                     continue
     except tarfile.TarError:
         pass
-    return extracted
+    return extracted, binary_count
 
 
-def _extract_from_zip(archive_path: Path) -> List[ExtractedFile]:
-    """Extrae archivos Python de un archivo .whl o .zip.
-
-    Args:
-        archive_path: Ruta al archivo zip.
-
-    Returns:
-        Lista de objetos ExtractedFile.
-    """
+def _extract_from_zip(archive_path: Path) -> Tuple[List[ExtractedFile], int]:
+    """Extrae archivos Python de un archivo .whl o .zip y cuenta binarios."""
     extracted = []
+    binary_count = 0
     try:
         with zipfile.ZipFile(archive_path, "r") as zf:
             for info in zf.infolist():
                 if info.is_dir():
                     continue
-                # Seguridad: rechazar path traversal, incluyendo variantes con
-                # separadores mixtos (/, \) y secuencias ./.. en rutas de archivos.
                 if not _is_safe_archive_path(info.filename):
                     continue
-                # Seguridad: ignorar archivos demasiado grandes
                 if info.file_size > MAX_FILE_SIZE:
+                    continue
+                if _is_binary_file(info.filename):
+                    binary_count += 1
                     continue
                 if not _is_python_file(info.filename):
                     continue
@@ -133,7 +122,7 @@ def _extract_from_zip(archive_path: Path) -> List[ExtractedFile]:
                     continue
     except zipfile.BadZipFile:
         pass
-    return extracted
+    return extracted, binary_count
 
 
 def _is_python_file(filename: str) -> bool:

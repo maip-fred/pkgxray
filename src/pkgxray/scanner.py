@@ -9,11 +9,7 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-import tarfile
-import zipfile
-
 from pkgxray import downloader, extractor, scorer
-from pkgxray.extractor import _is_binary_file
 from pkgxray.analyzers import get_all_analyzers
 from pkgxray.analyzers.base import ScanResult, build_parent_map, collect_import_aliases
 from pkgxray.analyzers.config_files import ConfigFileAnalyzer, TOMLLIB_AVAILABLE
@@ -21,24 +17,19 @@ from pkgxray.analyzers.setup_scripts import SetupScriptAnalyzer
 from pkgxray.downloader import DownloadError, PackageNotFoundError
 
 
-def _count_binary_files(archive_path) -> int:
-    """Returns the number of binary extension files in the archive."""
-    count = 0
-    name = str(archive_path).lower()
-    try:
-        if name.endswith(".tar.gz") or name.endswith(".tgz"):
-            with tarfile.open(archive_path, "r:gz") as tf:
-                for member in tf.getmembers():
-                    if member.isfile() and _is_binary_file(member.name):
-                        count += 1
-        elif name.endswith(".whl") or name.endswith(".zip"):
-            with zipfile.ZipFile(archive_path, "r") as zf:
-                for info in zf.infolist():
-                    if not info.is_dir() and _is_binary_file(info.filename):
-                        count += 1
-    except Exception:
-        pass
-    return count
+# In-session cache: keyed on (package_name_lower, version_str) for pinned versions.
+# Only populated when an explicit version is requested.  "latest" scans are never
+# cached because the package contents may change between calls.
+_SCAN_CACHE: dict = {}
+
+
+def clear_cache() -> None:
+    """Clears the in-session scan cache.
+
+    Call this in tests or when you need fresh results for a version you have
+    already scanned in the same Python session.
+    """
+    _SCAN_CACHE.clear()
 
 
 def scan(package_name: str, version: Optional[str] = None) -> ScanResult:
@@ -58,10 +49,13 @@ def scan(package_name: str, version: Optional[str] = None) -> ScanResult:
         PackageNotFoundError: Si el paquete no se encuentra en PyPI.
         DownloadError: Si el paquete no puede descargarse.
     """
-    # TODO (Phase 7): Add a disk-based or in-memory cache keyed on
-    # (package_name, version, archive_sha256) to avoid re-downloading and
-    # re-analysing the same package version on repeated calls.
-    # See deficiency #15 in pkgxray_deficiency_tracking_v2.md.
+    # Cache lookup: only for explicitly pinned versions.
+    if version is not None:
+        cache_key = (package_name.lower(), version)
+        if cache_key in _SCAN_CACHE:
+            logger.debug("Cache hit for %s==%s", package_name, version)
+            return _SCAN_CACHE[cache_key]
+
     tmp_dir = tempfile.mkdtemp(prefix="pkgxray_scan_")
     try:
         # Paso 1: Descarga
@@ -69,11 +63,8 @@ def scan(package_name: str, version: Optional[str] = None) -> ScanResult:
             package_name, version, dest_dir=tmp_dir
         )
 
-        # Paso 2: Extracción
-        extracted_files = extractor.extract_python_files(archive_path)
-
-        # Count binary files in the archive (not extracted, just inspected by name)
-        binary_files_found = _count_binary_files(archive_path)
+        # Paso 2: Extracción — returns (files, binary_count) in one archive pass
+        extracted_files, binary_files_found = extractor.extract_python_files(archive_path)
 
         # Paso 3: Análisis
         analyzers = get_all_analyzers()
@@ -145,7 +136,7 @@ def scan(package_name: str, version: Optional[str] = None) -> ScanResult:
         summary = scorer.get_summary(all_findings)
 
         # Paso 5: Retornar resultado
-        return ScanResult(
+        result = ScanResult(
             package_name=package_name,
             version=actual_version,
             scan_date=datetime.now(timezone.utc).isoformat(),
@@ -157,6 +148,12 @@ def scan(package_name: str, version: Optional[str] = None) -> ScanResult:
             skipped_files=skipped_files,
             binary_files_found=binary_files_found,
         )
+
+        # Cache pinned-version results for reuse within this session.
+        if version is not None:
+            _SCAN_CACHE[(package_name.lower(), actual_version)] = result
+
+        return result
 
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)

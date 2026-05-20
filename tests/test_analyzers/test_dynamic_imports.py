@@ -86,3 +86,29 @@ def test_analyzer_name():
     analyzer = DynamicImportAnalyzer()
     findings = analyzer.analyze('__import__("os")', 'test.py')
     assert all(f.analyzer_name == "dynamic_imports" for f in findings)
+
+
+def test_aliased_importlib_detected():
+    """import importlib as il; il.import_module('os') must be detected."""
+    analyzer = DynamicImportAnalyzer()
+    code = "import importlib as il\nil.import_module('os')\n"
+    findings = analyzer.analyze(code, "test.py")
+    assert len(findings) >= 1, "Aliased importlib.import_module must be detected"
+    assert any(f.severity == Severity.CRITICAL for f in findings)
+
+
+def test_aliased_importlib_in_function_detected():
+    """import importlib as il inside function → MEDIUM for static arg."""
+    analyzer = DynamicImportAnalyzer()
+    code = "def loader():\n    import importlib as il\n    il.import_module('json')\n"
+    findings = analyzer.analyze(code, "test.py")
+    assert len(findings) >= 1
+    assert any(f.severity == Severity.MEDIUM for f in findings)
+
+
+def test_unrelated_alias_not_flagged():
+    """import os as il; il.import_module('x') must NOT be flagged (os ≠ importlib)."""
+    analyzer = DynamicImportAnalyzer()
+    code = "import os as il\nil.import_module('x')\n"
+    findings = analyzer.analyze(code, "test.py")
+    assert findings == [], "os aliased as 'il' must not trigger importlib check"

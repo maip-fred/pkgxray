@@ -133,6 +133,7 @@ def generate_json_report(result: ScanResult) -> str:
         "risk_level": result.risk_level,
         "files_analyzed": result.files_analyzed,
         "files_skipped": len(result.skipped_files),
+        "binary_files_found": result.binary_files_found,
         "skipped_files": result.skipped_files,
         "summary": result.summary,
         "findings": [
@@ -190,6 +191,18 @@ def generate_html_report(result: ScanResult) -> str:
           <td style="padding:8px;">{esc_desc}</td>
           <td style="padding:8px;font-family:monospace;font-size:0.8em;">{esc_snippet}</td>
         </tr>"""
+
+    binary_notice = ""
+    binary_count = result.binary_files_found
+    if binary_count:
+        binary_notice = (
+            f'<div style="background:#e9ecef;border:1px solid #adb5bd;border-radius:8px;'
+            f'padding:12px 24px;margin-bottom:20px;color:#495057;">'
+            f'<strong>Nota:</strong> {binary_count} archivo(s) binario(s) compilado(s) '
+            f'(.so / .pyd / .dll / .dylib) encontrado(s) en el paquete — '
+            f'no se analizan (se requiere un desensamblador).'
+            f'</div>'
+        )
 
     no_findings_msg = ""
     if not result.findings:
@@ -253,6 +266,7 @@ def generate_html_report(result: ScanResult) -> str:
     <span style="color:#2ecc71;">{result.summary['low']} bajo(s)</span>
   </div>
   {skipped_warning}
+  {binary_notice}
   {no_findings_msg}
   {'<table><thead><tr><th>Severidad</th><th>Analizador</th><th>Archivo</th><th>Línea</th><th>Descripción</th><th>Fragmento</th></tr></thead><tbody>' + rows_html + '</tbody></table>' if result.findings else ''}
   <div class="footer">Generado por <strong>pkgxray</strong></div>

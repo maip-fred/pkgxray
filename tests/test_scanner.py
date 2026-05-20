@@ -42,6 +42,84 @@ def test_scan_unknown_package_raises():
         scan("paquete-que-no-existe-xyz123abc987")
 
 
+def test_cache_returns_same_object_for_pinned_version(monkeypatch):
+    """scan() with a pinned version must return the same object on second call."""
+    import pkgxray.scanner as scanner_mod
+    import pkgxray.extractor as ext_mod
+    import pkgxray.downloader as dl_mod
+
+    scanner_mod.clear_cache()
+
+    monkeypatch.setattr(dl_mod, "download_package",
+                        lambda *a, **kw: ("/fake/pkg.tar.gz", "1.2.3"))
+    monkeypatch.setattr(ext_mod, "extract_python_files", lambda _: ([], 0))
+
+    result1 = scanner_mod.scan("mypkg", version="1.2.3")
+    result2 = scanner_mod.scan("mypkg", version="1.2.3")
+
+    assert result1 is result2, "Cached result must be the identical object"
+
+
+def test_cache_not_used_for_latest_version(monkeypatch):
+    """scan() without a pinned version must never read or write the cache."""
+    import pkgxray.scanner as scanner_mod
+    import pkgxray.extractor as ext_mod
+    import pkgxray.downloader as dl_mod
+
+    scanner_mod.clear_cache()
+
+    call_count = {"n": 0}
+
+    def fake_download(*a, **kw):
+        call_count["n"] += 1
+        return ("/fake/pkg.tar.gz", "1.2.3")
+
+    monkeypatch.setattr(dl_mod, "download_package", fake_download)
+    monkeypatch.setattr(ext_mod, "extract_python_files", lambda _: ([], 0))
+
+    scanner_mod.scan("mypkg")
+    scanner_mod.scan("mypkg")
+
+    assert call_count["n"] == 2, "Latest-version scans must not be cached"
+
+
+def test_clear_cache_invalidates_stored_result(monkeypatch):
+    """clear_cache() must force a fresh scan on the next call."""
+    import pkgxray.scanner as scanner_mod
+    import pkgxray.extractor as ext_mod
+    import pkgxray.downloader as dl_mod
+
+    scanner_mod.clear_cache()
+
+    monkeypatch.setattr(dl_mod, "download_package",
+                        lambda *a, **kw: ("/fake/pkg.tar.gz", "2.0.0"))
+    monkeypatch.setattr(ext_mod, "extract_python_files", lambda _: ([], 0))
+
+    result1 = scanner_mod.scan("mypkg", version="2.0.0")
+    scanner_mod.clear_cache()
+    result2 = scanner_mod.scan("mypkg", version="2.0.0")
+
+    assert result1 is not result2, "After clear_cache(), a new object must be returned"
+
+
+def test_cache_is_case_insensitive_on_package_name(monkeypatch):
+    """Cache key must normalise package name to lowercase."""
+    import pkgxray.scanner as scanner_mod
+    import pkgxray.extractor as ext_mod
+    import pkgxray.downloader as dl_mod
+
+    scanner_mod.clear_cache()
+
+    monkeypatch.setattr(dl_mod, "download_package",
+                        lambda *a, **kw: ("/fake/pkg.tar.gz", "1.0.0"))
+    monkeypatch.setattr(ext_mod, "extract_python_files", lambda _: ([], 0))
+
+    result1 = scanner_mod.scan("MyPkg", version="1.0.0")
+    result2 = scanner_mod.scan("mypkg", version="1.0.0")
+
+    assert result1 is result2, "Cache must be case-insensitive on package name"
+
+
 def test_scan_result_has_binary_files_found_field():
     """ScanResult must always have binary_files_found field (defaults to 0)."""
     from pkgxray.analyzers.base import ScanResult, Finding
@@ -60,25 +138,32 @@ def test_scan_result_has_binary_files_found_field():
     assert result.binary_files_found == 0
 
 
-def test_count_binary_files_tarball(tmp_path):
-    """_count_binary_files detects .so files inside a tarball."""
-    import tarfile, io
-    from pkgxray.scanner import _count_binary_files
+def test_extract_python_files_counts_binary_tarball(tmp_path):
+    """extract_python_files() returns binary count in second tuple element."""
+    import io, tarfile
     archive = tmp_path / "pkg.tar.gz"
     with tarfile.open(archive, "w:gz") as tf:
-        for name, content in [("pkg/module.py", b"x=1"), ("pkg/_ext.so", b"\x7fELF")]:
-            info = tarfile.TarInfo(name=name)
-            info.size = len(content)
-            tf.addfile(info, io.BytesIO(content))
-    assert _count_binary_files(archive) == 1
+        info = tarfile.TarInfo(name="mylib/fast.so")
+        info.size = 4
+        tf.addfile(info, io.BytesIO(b"\x7fELF"))
+        py_info = tarfile.TarInfo(name="mylib/__init__.py")
+        py_content = b"x = 1\n"
+        py_info.size = len(py_content)
+        tf.addfile(py_info, io.BytesIO(py_content))
+    from pkgxray.extractor import extract_python_files
+    files, binary_count = extract_python_files(archive)
+    assert binary_count == 1
+    assert len(files) == 1
 
 
-def test_count_binary_files_zip(tmp_path):
-    """_count_binary_files detects .pyd files inside a wheel."""
+def test_extract_python_files_counts_binary_zip(tmp_path):
+    """extract_python_files() returns binary count for .whl archives."""
     import zipfile
-    from pkgxray.scanner import _count_binary_files
     archive = tmp_path / "pkg.whl"
     with zipfile.ZipFile(archive, "w") as zf:
-        zf.writestr("pkg/module.py", "x=1")
-        zf.writestr("pkg/_ext.pyd", b"\x4d\x5a".decode("latin-1"))
-    assert _count_binary_files(archive) == 1
+        zf.writestr("mylib/fast.pyd", b"\x4d\x5a")
+        zf.writestr("mylib/__init__.py", "x = 1\n")
+    from pkgxray.extractor import extract_python_files
+    files, binary_count = extract_python_files(archive)
+    assert binary_count == 1
+    assert len(files) == 1

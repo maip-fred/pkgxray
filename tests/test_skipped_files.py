@@ -74,10 +74,12 @@ def test_scanner_tracks_unparseable_file(monkeypatch):
 
     # Stub out download and extraction
     monkeypatch.setattr(dl_mod, "download_package", lambda *a, **kw: ("/fake/path", "1.0.0"))
-    monkeypatch.setattr(ext_mod, "extract_python_files", lambda _: [
-        ExtractedFile(filename="clean.py",   content="x = 1\n"),
-        ExtractedFile(filename="broken.py",  content="def bad(:\n  pass\n"),
-    ])
+    monkeypatch.setattr(ext_mod, "extract_python_files", lambda _: (
+        [
+            ExtractedFile(filename="clean.py",   content="x = 1\n"),
+            ExtractedFile(filename="broken.py",  content="def bad(:\n  pass\n"),
+        ], 0,
+    ))
 
     result = scanner_mod.scan("fake-pkg")
 
@@ -94,9 +96,9 @@ def test_scanner_clean_files_not_skipped(monkeypatch):
     from pkgxray.analyzers.base import ExtractedFile
 
     monkeypatch.setattr(dl_mod, "download_package", lambda *a, **kw: ("/fake/path", "1.0.0"))
-    monkeypatch.setattr(ext_mod, "extract_python_files", lambda _: [
-        ExtractedFile(filename="utils.py", content="def add(a, b):\n    return a + b\n"),
-    ])
+    monkeypatch.setattr(ext_mod, "extract_python_files", lambda _: (
+        [ExtractedFile(filename="utils.py", content="def add(a, b):\n    return a + b\n")], 0,
+    ))
 
     result = scanner_mod.scan("fake-pkg")
     assert result.skipped_files == []

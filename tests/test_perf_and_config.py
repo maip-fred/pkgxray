@@ -100,9 +100,9 @@ def test_scanner_builds_tree_once_per_file(monkeypatch):
     from pkgxray.analyzers.base import ExtractedFile
 
     monkeypatch.setattr(dl_mod, "download_package", lambda *a, **kw: ("/fake/path", "1.0.0"))
-    monkeypatch.setattr(ext_mod, "extract_python_files", lambda _: [
-        ExtractedFile(filename="module.py", content="x = 1\n"),
-    ])
+    monkeypatch.setattr(ext_mod, "extract_python_files", lambda _: (
+        [ExtractedFile(filename="module.py", content="x = 1\n")], 0,
+    ))
 
     parse_call_count = 0
     real_parse = ast.parse
@@ -133,13 +133,13 @@ def test_scanner_records_skipped_pyproject_when_tomllib_unavailable(monkeypatch)
     from pkgxray.analyzers.base import ExtractedFile
 
     monkeypatch.setattr(dl_mod, "download_package", lambda *a, **kw: ("/fake/path", "1.0.0"))
-    monkeypatch.setattr(ext_mod, "extract_python_files", lambda _: [
-        ExtractedFile(
+    monkeypatch.setattr(ext_mod, "extract_python_files", lambda _: (
+        [ExtractedFile(
             filename="pyproject.toml",
             content='[build-system]\nrequires = ["setuptools"]\n',
             is_config=True,
-        ),
-    ])
+        )], 0,
+    ))
     monkeypatch.setattr(scanner_mod, "TOMLLIB_AVAILABLE", False)
 
     result = scanner_mod.scan("fake-pkg")
@@ -156,13 +156,13 @@ def test_scanner_does_not_skip_setup_cfg_when_tomllib_unavailable(monkeypatch):
     from pkgxray.analyzers.base import ExtractedFile
 
     monkeypatch.setattr(dl_mod, "download_package", lambda *a, **kw: ("/fake/path", "1.0.0"))
-    monkeypatch.setattr(ext_mod, "extract_python_files", lambda _: [
-        ExtractedFile(
+    monkeypatch.setattr(ext_mod, "extract_python_files", lambda _: (
+        [ExtractedFile(
             filename="setup.cfg",
             content="[metadata]\nname = mypkg\n",
             is_config=True,
-        ),
-    ])
+        )], 0,
+    ))
     monkeypatch.setattr(scanner_mod, "TOMLLIB_AVAILABLE", False)
 
     result = scanner_mod.scan("fake-pkg")

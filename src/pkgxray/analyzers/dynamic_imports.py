@@ -5,6 +5,7 @@ from typing import List
 
 from pkgxray.analyzers.base import (
     BaseAnalyzer, Finding, Severity, build_parent_map, is_module_level,
+    collect_import_aliases,
 )
 
 
@@ -34,8 +35,9 @@ class DynamicImportAnalyzer(BaseAnalyzer):
           - Dentro de una función con argumento estático   → MEDIUM
             (__import__("json") es equivalente a import json).
 
-        Para importlib.import_module() verifica que el receptor sea 'importlib'
-        para evitar falsos positivos en objetos que tengan un método homónimo.
+        Para importlib.import_module() verifica que el receptor se resuelva a
+        'importlib' (incluyendo aliases como 'il') para evitar falsos positivos
+        en objetos que tengan un método homónimo.
         """
         if tree is None:
             tree = self._parse_ast(source_code)
@@ -46,6 +48,8 @@ class DynamicImportAnalyzer(BaseAnalyzer):
         findings = []
         if parent_map is None:
             parent_map = build_parent_map(tree)
+        if aliases is None:
+            aliases = collect_import_aliases(tree)
 
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
@@ -78,9 +82,11 @@ class DynamicImportAnalyzer(BaseAnalyzer):
 
             # ── importlib.import_module(...) ──────────────────────────────────
             elif isinstance(func, ast.Attribute) and func.attr == "import_module":
-                # Solo flaggear cuando el receptor es 'importlib'.
-                # Esto evita falsos positivos en obj.import_module("x").
-                if not (isinstance(func.value, ast.Name) and func.value.id == "importlib"):
+                # Only flag when the receiver resolves to 'importlib' (including aliases).
+                if not isinstance(func.value, ast.Name):
+                    continue
+                canonical_receiver = aliases.get(func.value.id, func.value.id)
+                if canonical_receiver != "importlib":
                     continue
                 if at_module:
                     severity = Severity.CRITICAL

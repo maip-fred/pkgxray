@@ -38,7 +38,7 @@ def test_extract_from_tarball():
         "mypackage/setup.py": "from setuptools import setup\nsetup()",
     })
     try:
-        files = extract_python_files(archive)
+        files, _ = extract_python_files(archive)
         names = [f.filename for f in files]
         assert any("module.py" in n for n in names)
         assert any("setup.py" in n for n in names)
@@ -49,7 +49,7 @@ def test_extract_from_tarball():
 def test_setup_py_flagged():
     archive = _make_tarball({"pkg/setup.py": "from setuptools import setup\nsetup()"})
     try:
-        files = extract_python_files(archive)
+        files, _ = extract_python_files(archive)
         setup_files = [f for f in files if f.is_setup]
         assert len(setup_files) >= 1
     finally:
@@ -61,7 +61,7 @@ def test_extract_from_zip():
         "mypackage/module.py": "x = 1",
     })
     try:
-        files = extract_python_files(archive)
+        files, _ = extract_python_files(archive)
         assert len(files) >= 1
     finally:
         archive.unlink()
@@ -106,7 +106,7 @@ def test_is_config_file():
 def test_path_traversal_skipped():
     archive = _make_tarball({"../../etc/passwd": "root:x:0:0"})
     try:
-        files = extract_python_files(archive)
+        files, _ = extract_python_files(archive)
         # Should not extract files with .. in path
         assert len(files) == 0
     finally:
@@ -117,7 +117,7 @@ def test_path_traversal_normpath_bypass_tarball():
     """foo/./../../evil.py usa normpath-bypass pero debe ser rechazado."""
     archive = _make_tarball({"foo/./../../evil.py": "import os; os.system('id')"})
     try:
-        files = extract_python_files(archive)
+        files, _ = extract_python_files(archive)
         assert len(files) == 0
     finally:
         archive.unlink()
@@ -127,7 +127,7 @@ def test_path_traversal_normpath_bypass_zip():
     """La misma variante de bypass en un .zip también debe ser rechazada."""
     archive = _make_zip({"foo/./../../evil.py": "import os"})
     try:
-        files = extract_python_files(archive)
+        files, _ = extract_python_files(archive)
         assert len(files) == 0
     finally:
         archive.unlink()
@@ -137,7 +137,7 @@ def test_absolute_path_skipped_tarball():
     """Las rutas absolutas en tarballs deben ser rechazadas."""
     archive = _make_tarball({"/etc/evil.py": "malicious"})
     try:
-        files = extract_python_files(archive)
+        files, _ = extract_python_files(archive)
         assert len(files) == 0
     finally:
         archive.unlink()
@@ -151,7 +151,7 @@ def test_windows_backslash_traversal_rejected_tarball(tmp_path):
         info = tarfile.TarInfo(name="foo\\..\\..\\evil.py")
         info.size = len(content)
         tf.addfile(info, io.BytesIO(content))
-    result = extract_python_files(archive)
+    result, _ = extract_python_files(archive)
     assert result == [], "Windows-style traversal must be rejected"
 
 
@@ -161,7 +161,7 @@ def test_windows_backslash_traversal_rejected_zip(tmp_path):
     with zipfile.ZipFile(archive, "w") as zf:
         info = zipfile.ZipInfo("foo\\..\\..\\evil.py")
         zf.writestr(info, "evil = True\n")
-    result = extract_python_files(archive)
+    result, _ = extract_python_files(archive)
     assert result == [], "Windows-style traversal must be rejected"
 
 
@@ -183,7 +183,8 @@ def test_binary_files_not_extracted(tmp_path):
             info = tarfile.TarInfo(name=name)
             info.size = len(content)
             tf.addfile(info, io.BytesIO(content))
-    result = extract_python_files(archive)
+    result, binary_count = extract_python_files(archive)
     filenames = [f.filename for f in result]
     assert any("module.py" in fn for fn in filenames)
     assert not any(fn.endswith(".so") for fn in filenames)
+    assert binary_count == 1
