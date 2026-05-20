@@ -2,9 +2,13 @@
 
 import configparser
 import io
+import logging
+import re
 from typing import List
 
 from pkgxray.analyzers.base import BaseAnalyzer, Finding, Severity
+
+_logger = logging.getLogger(__name__)
 
 try:
     import tomllib
@@ -21,16 +25,65 @@ _SUSPICIOUS_BUILD_DEPS = {
     "boto3", "google-cloud", "azure",
 }
 
-# Prefijos de comandos de shell en entrypoints que no deberían estar ahí.
+# Comandos de shell sospechosos en entrypoints.
 _SHELL_KEYWORDS = {"curl", "wget", "bash", "sh", "nc", "ncat", "python -c", "eval"}
+
+# Entrypoints cortos (≤ 2 chars) necesitan coincidencia de palabra completa para
+# evitar falsos positivos en identificadores Python (ej. "sh" en "bash_utils").
+_SHORT_SHELL_KWS = {kw for kw in _SHELL_KEYWORDS if len(kw) <= 2}
+
+# Regex para detectar un Python entrypoint válido: "module.submodule:function".
+# Los entrypoints Python nunca contienen espacios ni metacaracteres de shell.
+_PYTHON_EP_RE = re.compile(r'^[\w][\w.\-]*:[\w][\w.]*(\s*\[[\w,\s]*\])?$')
 
 # Campos de pyproject.toml donde se pueden definir scripts/entrypoints.
 _SCRIPT_FIELDS = {"scripts", "gui-scripts", "entry-points", "entry_points"}
 
+# Flag para emitir el warning de tomllib ausente solo una vez por sesión.
+_warned_no_tomllib = False
+
+
+def _find_line(content: str, *search_strings: str) -> int:
+    """Retorna el número de línea (base 1) de la primera línea que contiene algún string.
+
+    Aproximación de mejor esfuerzo — los parsers TOML/INI no exponen números de línea.
+    Retorna 0 si ninguno de los strings se encuentra.
+    """
+    for i, line in enumerate(content.splitlines(), 1):
+        if any(s in line for s in search_strings):
+            return i
+    return 0
+
+
+def _is_python_ep(target: str) -> bool:
+    """Retorna True si target parece un entrypoint Python válido (module:function)."""
+    return bool(_PYTHON_EP_RE.match(target.strip()))
+
+
+def _contains_shell_keyword(target_lower: str) -> str:
+    """Retorna el primer keyword de shell encontrado en target_lower, o '' si ninguno."""
+    for kw in _SHELL_KEYWORDS:
+        if kw in _SHORT_SHELL_KWS:
+            # Para keywords cortos (sh, nc): exigir palabra completa con \b
+            if re.search(r'\b' + re.escape(kw) + r'\b', target_lower):
+                return kw
+        else:
+            if kw in target_lower:
+                return kw
+    return ""
+
 
 def _check_pyproject(content: str, filename: str) -> List[Finding]:
     """Analiza un archivo pyproject.toml en busca de configuraciones sospechosas."""
+    global _warned_no_tomllib
     if tomllib is None:
+        if not _warned_no_tomllib:
+            _logger.warning(
+                "tomllib no disponible y tomli no está instalado — '%s' no será analizado. "
+                "Instala tomli para soporte en Python < 3.11: pip install tomli",
+                filename,
+            )
+            _warned_no_tomllib = True
         return []
 
     findings = []
@@ -53,7 +106,7 @@ def _check_pyproject(content: str, filename: str) -> List[Finding]:
                         "paquetes de red/cloud rara vez son necesarios en tiempo de build"
                     ),
                     filename=filename,
-                    line_number=0,
+                    line_number=_find_line(content, f'"{dep}"', f"'{dep}'", dep_name),
                     code_snippet=f"requires = [..., \"{dep}\", ...]",
                     analyzer_name="config_files",
                 ))
@@ -65,20 +118,22 @@ def _check_pyproject(content: str, filename: str) -> List[Finding]:
         if not isinstance(scripts, dict):
             continue
         for name, target in scripts.items():
-            target_str = str(target)
-            for kw in _SHELL_KEYWORDS:
-                if kw in target_str:
-                    findings.append(Finding(
-                        severity=Severity.CRITICAL,
-                        description=(
-                            f"Entrypoint '{name}' contiene comando de shell sospechoso: '{kw}'"
-                        ),
-                        filename=filename,
-                        line_number=0,
-                        code_snippet=f"{name} = {target_str[:120]}",
-                        analyzer_name="config_files",
-                    ))
-                    break
+            target_str = str(target).strip()
+            if _is_python_ep(target_str):
+                # Entrypoint Python legítimo (module:function) — no contiene shell commands
+                continue
+            matched_kw = _contains_shell_keyword(target_str.lower())
+            if matched_kw:
+                findings.append(Finding(
+                    severity=Severity.CRITICAL,
+                    description=(
+                        f"Entrypoint '{name}' contiene comando de shell sospechoso: '{matched_kw}'"
+                    ),
+                    filename=filename,
+                    line_number=_find_line(content, name),
+                    code_snippet=f"{name} = {target_str[:120]}",
+                    analyzer_name="config_files",
+                ))
 
     # --- [tool.hatch] / [tool.*] post-install hooks ------------------------
     tool = data.get("tool", {})
@@ -94,7 +149,7 @@ def _check_pyproject(content: str, filename: str) -> List[Finding]:
                     "revisar que no ejecuten código arbitrario en tiempo de instalación"
                 ),
                 filename=filename,
-                line_number=0,
+                line_number=_find_line(content, "hooks"),
                 code_snippet=str(list(hooks.keys()))[:120],
                 analyzer_name="config_files",
             ))
@@ -124,27 +179,36 @@ def _check_setup_cfg(content: str, filename: str) -> List[Finding]:
                     f"Dependencia sospechosa en [options].install_requires: '{line.strip()}'"
                 ),
                 filename=filename,
-                line_number=0,
+                line_number=_find_line(content, dep_name),
                 code_snippet=line.strip()[:120],
                 analyzer_name="config_files",
             ))
 
     # --- [options.entry_points] --------------------------------------------
     if parser.has_section("options.entry_points"):
-        for key, value in parser.items("options.entry_points"):
-            for kw in _SHELL_KEYWORDS:
-                if kw in value:
+        for _group_key, group_value in parser.items("options.entry_points"):
+            for ep_line in group_value.splitlines():
+                ep_line = ep_line.strip()
+                if not ep_line or "=" not in ep_line:
+                    continue
+                ep_name, ep_target = ep_line.split("=", 1)
+                ep_name = ep_name.strip()
+                ep_target = ep_target.strip()
+                if _is_python_ep(ep_target):
+                    # Entrypoint Python legítimo — no contiene shell commands
+                    continue
+                matched_kw = _contains_shell_keyword(ep_target.lower())
+                if matched_kw:
                     findings.append(Finding(
                         severity=Severity.CRITICAL,
                         description=(
-                            f"Entrypoint '{key}' contiene comando de shell sospechoso: '{kw}'"
+                            f"Entrypoint '{ep_name}' contiene comando de shell sospechoso: '{matched_kw}'"
                         ),
                         filename=filename,
-                        line_number=0,
-                        code_snippet=f"{key} = {value[:120]}",
+                        line_number=_find_line(content, ep_name),
+                        code_snippet=f"{ep_name} = {ep_target[:120]}",
                         analyzer_name="config_files",
                     ))
-                    break
 
     return findings
 

