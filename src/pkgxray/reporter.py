@@ -67,7 +67,7 @@ def print_terminal_report(result: ScanResult) -> None:
 
     # Advertencia de archivos omitidos
     if result.skipped_files:
-        skipped_names = ", ".join(s["filename"].split("/")[-1] for s in result.skipped_files[:5])
+        skipped_names = ", ".join(Path(s["filename"]).name for s in result.skipped_files[:5])
         more = f" (+{len(result.skipped_files) - 5} más)" if len(result.skipped_files) > 5 else ""
         console.print(Panel(
             f"[bold yellow]Advertencia:[/bold yellow] {len(result.skipped_files)} archivo(s) no pudieron analizarse "
@@ -188,6 +188,7 @@ def generate_html_report(result: ScanResult) -> str:
 
     esc_pkg     = html.escape(result.package_name)
     esc_version = html.escape(result.version)
+    esc_date    = html.escape(result.scan_date)
 
     skipped_warning = ""
     if result.skipped_files:
@@ -228,7 +229,7 @@ def generate_html_report(result: ScanResult) -> str:
 <div class="container">
   <div class="header">
     <h1 style="margin:0 0 6px 0;">pkgxray — Reporte de Seguridad</h1>
-    <div><strong>Paquete:</strong> {esc_pkg} &nbsp; <strong>Versión:</strong> {esc_version} &nbsp; <strong>Fecha:</strong> {result.scan_date}</div>
+    <div><strong>Paquete:</strong> {esc_pkg} &nbsp; <strong>Versión:</strong> {esc_version} &nbsp; <strong>Fecha:</strong> {esc_date}</div>
   </div>
   <div class="score-box">
     <div style="font-size:2em;font-weight:bold;">{result.risk_score}/100</div>
