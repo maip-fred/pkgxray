@@ -850,7 +850,7 @@ Users can enable it with `logging.basicConfig(level=logging.DEBUG)` or via a `--
 
 ### Phase 5: Infrastructure & Docs
 
-#### TASK-P5-01: Fix version string inconsistencies
+#### ✅ TASK-P5-01: Fix version string inconsistencies [DONE]
 **Files:** `src/pkgxray/cli.py`, `src/pkgxray/downloader.py`
 **Bugs:** BUG-07, BUG-08
 **Priority:** LOW
@@ -877,7 +877,7 @@ _version = get_version("pkgxray")
 
 ---
 
-#### TASK-P5-02: Clean up dead code
+#### ✅ TASK-P5-02: Clean up dead code [DONE]
 **Files:** `src/pkgxray/utils.py`, `src/pkgxray/analyzers/base.py`, `src/pkgxray/extractor.py`
 **Bugs:** BUG-09, BUG-10
 **Priority:** LOW
@@ -887,7 +887,7 @@ _version = get_version("pkgxray")
 
 ---
 
-#### TASK-P5-03: Update all documentation after fixes
+#### ✅ TASK-P5-03: Update all documentation after fixes [DONE]
 **Files:** `docs/QUANTA.md`, `docs/ADR.md`, `README.md`, `CHANGELOG.md`
 **Priority:** LOW (but required for professor)
 
@@ -899,7 +899,7 @@ After all code changes:
 
 ---
 
-#### TASK-P5-04: Enhance the demo notebook
+#### ✅ TASK-P5-04: Enhance the demo notebook [DONE]
 **File:** `notebooks/pkgxray_tutorial.ipynb`
 **Priority:** LOW (but required for professor)
 
@@ -1055,10 +1055,10 @@ Phase 4 (New features — do fourth, ~2 hours)
 └── ✅ P4-04: Add basic logging [DONE]
 
 Phase 5 (Cleanup & docs — do last, ~1 hour)
-├── P5-01: Fix version strings
-├── P5-02: Clean up dead code
-├── P5-03: Update all docs (QUANTA, ADR, README, CHANGELOG)
-├── P5-04: Enhance demo notebook
+├── ✅ P5-01: Fix version strings [DONE]
+├── ✅ P5-02: Clean up dead code [DONE]
+├── ✅ P5-03: Update all docs (QUANTA, ADR, README, CHANGELOG) [DONE]
+├── ✅ P5-04: Enhance demo notebook [DONE]
 └── ✅ P5-05: Write test_scorer.py and test_reporter.py [DONE]
 ```
 
