@@ -37,17 +37,30 @@ ANALYZER_CAPS = {
 _DEFAULT_CAP = 10  # fallback for any analyzer not listed above
 
 # Bonus points when a package combines multiple high-risk analyzer categories.
-# Each combo only fires when BOTH sides have at least one HIGH-severity finding —
-# this prevents legitimate packages (e.g. requests, which has network + env_access
-# at LOW/MEDIUM) from triggering the bonus.  Revisit this gate after Phase 2
-# analyzer fixes reduce false positives further.
+#
+# DANGEROUS_COMBOS maps a pair of analyzer names to the bonus score awarded when
+# both analyzers produce findings above their respective minimum severity threshold.
+#
+# Per-combo minimum severity (see _COMBO_MIN_SEVERITY below):
+#   - env_access + network  → requires CRITICAL from both sides.
+#     Rationale: legitimate packages (e.g. boto3, stripe-python) read cloud
+#     credentials inside functions and make HTTPS calls — both at HIGH severity.
+#     The exfiltration pattern we want to flag requires module-level code that
+#     auto-executes at import time, which already escalates to CRITICAL.  Using
+#     HIGH as the gate caused boto3-style SDKs to score HIGH (false positive).
+#   - All other combos     → requires HIGH from both sides (unchanged).
 DANGEROUS_COMBOS = {
     frozenset({"env_access", "network"}): 25,       # credential exfiltration
     frozenset({"network", "subprocess"}): 10,        # download + execute
     frozenset({"obfuscation", "code_exec"}): 20,     # obfuscated payload
     frozenset({"setup_scripts", "subprocess"}): 10,  # install hook + shell commands
 }
-_COMBO_MIN_WEIGHT = SEVERITY_WEIGHTS[Severity.HIGH]  # 7 — both sides must have ≥ HIGH
+
+# Per-combo minimum severity overrides.  Combos not listed here use _COMBO_DEFAULT_MIN.
+_COMBO_MIN_SEVERITY: dict = {
+    frozenset({"env_access", "network"}): Severity.CRITICAL,
+}
+_COMBO_DEFAULT_MIN = Severity.HIGH
 
 
 def calculate_risk_score(findings: List[Finding]) -> Tuple[int, str]:
@@ -83,7 +96,9 @@ def calculate_risk_score(findings: List[Finding]) -> Tuple[int, str]:
     )
 
     for combo, bonus in DANGEROUS_COMBOS.items():
-        if all(max_weight_by_analyzer.get(a, 0) >= _COMBO_MIN_WEIGHT for a in combo):
+        min_sev = _COMBO_MIN_SEVERITY.get(combo, _COMBO_DEFAULT_MIN)
+        min_weight = SEVERITY_WEIGHTS[min_sev]
+        if all(max_weight_by_analyzer.get(a, 0) >= min_weight for a in combo):
             capped_total += bonus
 
     score = min(100, capped_total)

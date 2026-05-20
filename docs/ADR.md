@@ -101,16 +101,16 @@ Severity weights (unchanged): LOW=1, MEDIUM=3, HIGH=7, CRITICAL=15.
 | 36 – 60 | HIGH |
 | 61 – 100 | CRITICAL |
 
-**Combo bonuses (v0.3.0):**
+**Combo bonuses — minimum severity gate (post v0.3.0 calibration):**
 
-| Combo | Bonus | Meaning |
-|---|---|---|
-| `env_access` + `network` | +15 | Credential exfiltration pattern |
-| `network` + `subprocess` | +10 | Download and execute pattern |
-| `obfuscation` + `code_exec` | +20 | Obfuscated payload pattern |
-| `setup_scripts` + `subprocess` | +10 | Install hook with shell commands |
+| Combo | Bonus | Min severity required | Meaning |
+|---|---|---|---|
+| `env_access` + `network` | +25 | **CRITICAL** (both sides) | Credential exfiltration pattern |
+| `network` + `subprocess` | +10 | HIGH (both sides) | Download and execute pattern |
+| `obfuscation` + `code_exec` | +20 | HIGH (both sides) | Obfuscated payload pattern |
+| `setup_scripts` + `subprocess` | +10 | HIGH (both sides) | Install hook with shell commands |
 
-Combo bonuses only fire when both analysers have at least one HIGH-severity finding, preventing legitimate packages from triggering them.
+**Why `env_access + network` requires CRITICAL:** Legitimate cloud SDKs (boto3, stripe-python, google-cloud-*) read credential env vars inside functions (HIGH severity) and make HTTPS calls (HIGH severity). The original HIGH gate caused these packages to score HIGH — a false positive. The attack pattern we target is *module-level* credential theft that auto-executes at import time; module-level findings already escalate to CRITICAL via ADR-005. Requiring CRITICAL from both sides restricts the combo to the true attack pattern without penalising legitimate SDKs.
 
 ### Rationale
 

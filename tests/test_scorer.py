@@ -240,20 +240,42 @@ def test_get_summary_empty():
 # Combo bonuses
 # ---------------------------------------------------------------------------
 
-def test_combo_env_access_network_fires_with_high_severity():
-    """env_access + network both at HIGH → combo bonus of +15 applied."""
-    from pkgxray.scorer import DANGEROUS_COMBOS
-    bonus = DANGEROUS_COMBOS[frozenset({"env_access", "network"})]
+def test_combo_env_access_network_does_not_fire_at_high():
+    """env_access + network both at HIGH → combo does NOT fire (requires CRITICAL).
 
+    A legitimate AWS/Stripe SDK reads credentials from env vars inside a function
+    (HIGH, not CRITICAL) and makes HTTPS calls (HIGH).  This should NOT trigger
+    the credential-exfiltration combo — only module-level (CRITICAL) code auto-runs
+    at import time and warrants the bonus.
+    """
     base_findings = (
         findings_for("env_access", Severity.HIGH, 1)
         + findings_for("network", Severity.HIGH, 1)
     )
+    score, level = calculate_risk_score(base_findings)
+    # Without combo: env_access(7 → capped 5) + network(7 → min(7,8)=7) = 12
+    assert score == 12
+    assert level == "LOW"
+
+
+def test_combo_env_access_network_fires_at_critical():
+    """env_access + network both at CRITICAL → combo bonus applied.
+
+    Module-level env reads + module-level network call = auto-executes at import.
+    This is the canonical exfiltration pattern: both sides must be CRITICAL.
+    """
+    from pkgxray.scorer import DANGEROUS_COMBOS
+    bonus = DANGEROUS_COMBOS[frozenset({"env_access", "network"})]
+
+    base_findings = (
+        findings_for("env_access", Severity.CRITICAL, 1)
+        + findings_for("network", Severity.CRITICAL, 1)
+    )
     score_with_combo, _ = calculate_risk_score(base_findings)
 
-    # Without combo: env_access(7 → capped 5) + network(7 → capped 8) = 12
-    # With combo: 12 + 15 = 27
-    assert score_with_combo == 12 + bonus
+    # env_access: 15 → capped 5.  network: 15 → min(15,8) = 8.  Total capped = 13.
+    # Combo fires (both CRITICAL ≥ CRITICAL threshold): +25 → 38
+    assert score_with_combo == 13 + bonus
 
 
 def test_combo_does_not_fire_when_severity_below_high():
