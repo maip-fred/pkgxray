@@ -240,7 +240,7 @@ These close actual vulnerabilities. Do these FIRST.
 
 ---
 
-#### TASK-P1-02: Fix path traversal bypass in extractor
+#### ✅ TASK-P1-02: Fix path traversal bypass in extractor [DONE]
 **File:** `src/pkgxray/extractor.py`
 **Bug:** BUG-02
 **Priority:** CRITICAL
@@ -277,7 +277,7 @@ These close actual vulnerabilities. Do these FIRST.
 
 These fix false positives and false negatives.
 
-#### TASK-P2-01: Fix `filesystem.py` — `list.remove()` false positive
+#### ✅ TASK-P2-01: Fix `filesystem.py` — `list.remove()` false positive [DONE]
 **File:** `src/pkgxray/analyzers/filesystem.py`
 **Bug:** BUG-04
 **Priority:** HIGH
@@ -312,7 +312,7 @@ if isinstance(node, ast.Call) and isinstance(func, ast.Attribute):
 
 ---
 
-#### TASK-P2-02: Fix `network.py` — chained attribute receiver not detected
+#### ✅ TASK-P2-02: Fix `network.py` — chained attribute receiver not detected [DONE]
 **File:** `src/pkgxray/analyzers/network.py`
 **Bug:** Chained attribute false negative
 **Priority:** HIGH
@@ -346,7 +346,7 @@ Then replace every `func.value.id if isinstance(func.value, ast.Name) else ""` w
 
 ---
 
-#### TASK-P2-03: Fix `dynamic_imports.py` — receiver not verified + severity noise
+#### ✅ TASK-P2-03: Fix `dynamic_imports.py` — receiver not verified + severity noise [DONE]
 **File:** `src/pkgxray/analyzers/dynamic_imports.py`
 **Bugs:** BUG-05, BUG-06
 **Priority:** HIGH
@@ -379,7 +379,7 @@ Then replace every `func.value.id if isinstance(func.value, ast.Name) else ""` w
 
 ---
 
-#### TASK-P2-04: Fix `base.py` — class body misclassified as not module-level
+#### ✅ TASK-P2-04: Fix `base.py` — class body misclassified as not module-level [DONE]
 **File:** `src/pkgxray/analyzers/base.py`
 **Bug:** BUG-03
 **Priority:** MEDIUM
@@ -408,7 +408,7 @@ def is_module_level(node, parent_map: dict) -> bool:
 
 ---
 
-#### TASK-P2-05: Add `is_module_level` to filesystem, env_access, dynamic_imports
+#### ✅ TASK-P2-05: Add `is_module_level` to filesystem, env_access, dynamic_imports [DONE]
 **Files:** `src/pkgxray/analyzers/filesystem.py`, `env_access.py`, `dynamic_imports.py`
 **Bug:** BUG-11
 **Priority:** MEDIUM
@@ -442,7 +442,7 @@ Apply to:
 
 ---
 
-#### TASK-P2-06: Expand sensitive paths and env keywords
+#### ✅ TASK-P2-06: Expand sensitive paths and env keywords [DONE]
 **Files:** `src/pkgxray/analyzers/filesystem.py`, `env_access.py`
 **Priority:** MEDIUM
 
@@ -688,7 +688,7 @@ class TestCleanFixtures:
 
 ### Phase 4: New Capabilities
 
-#### TASK-P4-01: Add `--fail-above` CLI option
+#### ✅ TASK-P4-01: Add `--fail-above` CLI option [DONE]
 **File:** `src/pkgxray/cli.py`
 **Priority:** MEDIUM
 
@@ -829,7 +829,7 @@ def scan_cmd(package_name, version, output_format, output, fail_above):
 
 ---
 
-#### TASK-P4-04: Add basic logging
+#### ✅ TASK-P4-04: Add basic logging [DONE]
 **Files:** `src/pkgxray/scanner.py`, other modules as needed
 **Priority:** MEDIUM
 
@@ -1006,12 +1006,12 @@ docker compose run test
 | `tests/test_scorer.py` | ✅ DONE | P5-05 |
 | `tests/test_reporter.py` | ✅ DONE | P5-05 |
 | `tests/test_analyzers/test_config_files.py` | CREATE | P4-02 |
-| `tests/test_analyzers/test_filesystem.py` | UPDATE | P2-01, P2-05 |
-| `tests/test_analyzers/test_network.py` | UPDATE | P2-02 |
-| `tests/test_analyzers/test_dynamic_imports.py` | UPDATE | P2-03 |
-| `tests/test_analyzers/test_code_exec.py` | UPDATE | P2-04 (ClassDef test) |
-| `tests/test_analyzers/test_subprocess.py` | UPDATE | P2-04 (ClassDef test) |
-| `tests/test_extractor.py` | UPDATE | P1-02 |
+| `tests/test_analyzers/test_filesystem.py` | ✅ DONE | P2-01, P2-05 |
+| `tests/test_analyzers/test_network.py` | ✅ DONE | P2-02 |
+| `tests/test_analyzers/test_dynamic_imports.py` | ✅ DONE | P2-03 |
+| `tests/test_analyzers/test_code_exec.py` | ✅ DONE | P2-04 (ClassDef test) |
+| `tests/test_analyzers/test_subprocess.py` | ✅ DONE | P2-04 (ClassDef test) |
+| `tests/test_extractor.py` | ✅ DONE | P1-02 |
 
 ---
 
@@ -1033,15 +1033,15 @@ A task is done when:
 ```
 Phase 1 (Security — do first, ~30 min)
 ├── ✅ P1-01: Fix XSS in reporter [DONE]
-└── P1-02: Fix path traversal in extractor
+└── ✅ P1-02: Fix path traversal in extractor [DONE]
 
 Phase 2 (Correctness — do second, ~2-3 hours)
-├── P2-01: Fix list.remove() false positive
-├── P2-02: Fix chained attribute detection in network
-├── P2-03: Fix dynamic_imports receiver + severity
-├── P2-04: Fix is_module_level ClassDef bug
-├── P2-05: Add is_module_level to 3 analyzers
-└── P2-06: Expand sensitive paths and env keywords
+├── ✅ P2-01: Fix list.remove() false positive [DONE]
+├── ✅ P2-02: Fix chained attribute detection in network [DONE]
+├── ✅ P2-03: Fix dynamic_imports receiver + severity [DONE]
+├── ✅ P2-04: Fix is_module_level ClassDef bug [DONE]
+├── ✅ P2-05: Add is_module_level to 3 analyzers [DONE]
+└── ✅ P2-06: Expand sensitive paths and env keywords [DONE]
 
 Phase 3 (Scorer — do third, ~1-2 hours)
 ├── ✅ P3-01: Create synthetic fixtures [DONE]
@@ -1049,10 +1049,10 @@ Phase 3 (Scorer — do third, ~1-2 hours)
 └── ✅ P3-03: Integration tests (depends on P3-01 + P3-02) [DONE]
 
 Phase 4 (New features — do fourth, ~2 hours)
-├── P4-01: --fail-above CLI option
+├── ✅ P4-01: --fail-above CLI option [DONE]
 ├── ✅ P4-02: TOML parsing for pyproject.toml [DONE]
 ├── ✅ P4-03: Surface skipped files in ScanResult [DONE]
-└── P4-04: Add basic logging
+└── ✅ P4-04: Add basic logging [DONE]
 
 Phase 5 (Cleanup & docs — do last, ~1 hour)
 ├── P5-01: Fix version strings
