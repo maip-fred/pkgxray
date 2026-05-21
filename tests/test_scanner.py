@@ -47,22 +47,29 @@ def test_cache_returns_same_object_for_pinned_version(monkeypatch):
     import pkgxray.scanner as scanner_mod
     import pkgxray.extractor as ext_mod
     import pkgxray.downloader as dl_mod
+    from pathlib import Path
 
     scanner_mod.clear_cache()
 
+    _fake_info = {
+        "info": {"version": "1.2.3"},
+        "urls": [{"url": "http://x/mypkg-1.2.3.tar.gz", "filename": "mypkg-1.2.3.tar.gz",
+                  "packagetype": "sdist", "digests": {}}],
+    }
     call_count = {"n": 0}
 
-    def fake_download(*a, **kw):
+    def fake_get_info(*a, **kw):
         call_count["n"] += 1
-        return ("/fake/pkg.tar.gz", "1.2.3")
+        return _fake_info
 
-    monkeypatch.setattr(dl_mod, "download_package", fake_download)
+    monkeypatch.setattr(dl_mod, "get_package_info", fake_get_info)
+    monkeypatch.setattr(dl_mod, "download_file", lambda *a, **kw: Path("/fake/pkg.tar.gz"))
     monkeypatch.setattr(ext_mod, "extract_python_files", lambda _: ([], 0))
 
     result1 = scanner_mod.scan("mypkg", version="1.2.3")
     result2 = scanner_mod.scan("mypkg", version="1.2.3")
 
-    assert call_count["n"] == 1, "Second call must hit cache — download called only once"
+    assert call_count["n"] == 1, "Second call must hit cache — get_package_info called only once"
     assert result1.package_name == result2.package_name
     assert result1.version == result2.version
 
@@ -72,16 +79,23 @@ def test_cache_not_used_for_latest_version(monkeypatch):
     import pkgxray.scanner as scanner_mod
     import pkgxray.extractor as ext_mod
     import pkgxray.downloader as dl_mod
+    from pathlib import Path
 
     scanner_mod.clear_cache()
 
+    _fake_info = {
+        "info": {"version": "1.2.3"},
+        "urls": [{"url": "http://x/mypkg-1.2.3.tar.gz", "filename": "mypkg-1.2.3.tar.gz",
+                  "packagetype": "sdist", "digests": {}}],
+    }
     call_count = {"n": 0}
 
-    def fake_download(*a, **kw):
+    def fake_get_info(*a, **kw):
         call_count["n"] += 1
-        return ("/fake/pkg.tar.gz", "1.2.3")
+        return _fake_info
 
-    monkeypatch.setattr(dl_mod, "download_package", fake_download)
+    monkeypatch.setattr(dl_mod, "get_package_info", fake_get_info)
+    monkeypatch.setattr(dl_mod, "download_file", lambda *a, **kw: Path("/fake/pkg.tar.gz"))
     monkeypatch.setattr(ext_mod, "extract_python_files", lambda _: ([], 0))
 
     scanner_mod.scan("mypkg")
@@ -95,11 +109,18 @@ def test_clear_cache_invalidates_stored_result(monkeypatch):
     import pkgxray.scanner as scanner_mod
     import pkgxray.extractor as ext_mod
     import pkgxray.downloader as dl_mod
+    from pathlib import Path
 
     scanner_mod.clear_cache()
 
-    monkeypatch.setattr(dl_mod, "download_package",
-                        lambda *a, **kw: ("/fake/pkg.tar.gz", "2.0.0"))
+    _fake_info = {
+        "info": {"version": "2.0.0"},
+        "urls": [{"url": "http://x/mypkg-2.0.0.tar.gz", "filename": "mypkg-2.0.0.tar.gz",
+                  "packagetype": "sdist", "digests": {}}],
+    }
+
+    monkeypatch.setattr(dl_mod, "get_package_info", lambda *a, **kw: _fake_info)
+    monkeypatch.setattr(dl_mod, "download_file", lambda *a, **kw: Path("/fake/pkg.tar.gz"))
     monkeypatch.setattr(ext_mod, "extract_python_files", lambda _: ([], 0))
 
     result1 = scanner_mod.scan("mypkg", version="2.0.0")
@@ -114,16 +135,23 @@ def test_cache_is_case_insensitive_on_package_name(monkeypatch):
     import pkgxray.scanner as scanner_mod
     import pkgxray.extractor as ext_mod
     import pkgxray.downloader as dl_mod
+    from pathlib import Path
 
     scanner_mod.clear_cache()
 
+    _fake_info = {
+        "info": {"version": "1.0.0"},
+        "urls": [{"url": "http://x/mypkg-1.0.0.tar.gz", "filename": "mypkg-1.0.0.tar.gz",
+                  "packagetype": "sdist", "digests": {}}],
+    }
     call_count = {"n": 0}
 
-    def counting_download(*a, **kw):
+    def counting_get_info(*a, **kw):
         call_count["n"] += 1
-        return ("/fake/pkg.tar.gz", "1.0.0")
+        return _fake_info
 
-    monkeypatch.setattr(dl_mod, "download_package", counting_download)
+    monkeypatch.setattr(dl_mod, "get_package_info", counting_get_info)
+    monkeypatch.setattr(dl_mod, "download_file", lambda *a, **kw: Path("/fake/pkg.tar.gz"))
     monkeypatch.setattr(ext_mod, "extract_python_files", lambda _: ([], 0))
 
     result1 = scanner_mod.scan("MyPkg", version="1.0.0")

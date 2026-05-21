@@ -92,14 +92,23 @@ def test_build_parent_map_called_when_not_provided(analyzer):
 # Scanner integration: tree built once, not N times per file
 # ---------------------------------------------------------------------------
 
+_FAKE_PKG_INFO = {
+    "info": {"version": "1.0.0"},
+    "urls": [{"url": "http://x/fake-1.0.0.tar.gz", "filename": "fake-1.0.0.tar.gz",
+              "packagetype": "sdist", "digests": {}}],
+}
+
+
 def test_scanner_builds_tree_once_per_file(monkeypatch):
     """The scanner must call ast.parse() once per .py file, not once per analyzer."""
     import pkgxray.scanner as scanner_mod
     import pkgxray.downloader as dl_mod
     import pkgxray.extractor as ext_mod
     from pkgxray.analyzers.base import ExtractedFile
+    from pathlib import Path
 
-    monkeypatch.setattr(dl_mod, "download_package", lambda *a, **kw: ("/fake/path", "1.0.0"))
+    monkeypatch.setattr(dl_mod, "get_package_info", lambda *a, **kw: _FAKE_PKG_INFO)
+    monkeypatch.setattr(dl_mod, "download_file", lambda *a, **kw: Path("/fake/path"))
     monkeypatch.setattr(ext_mod, "extract_python_files", lambda _: (
         [ExtractedFile(filename="module.py", content="x = 1\n")], 0,
     ))
@@ -131,8 +140,10 @@ def test_scanner_records_skipped_pyproject_when_tomllib_unavailable(monkeypatch)
     import pkgxray.downloader as dl_mod
     import pkgxray.extractor as ext_mod
     from pkgxray.analyzers.base import ExtractedFile
+    from pathlib import Path
 
-    monkeypatch.setattr(dl_mod, "download_package", lambda *a, **kw: ("/fake/path", "1.0.0"))
+    monkeypatch.setattr(dl_mod, "get_package_info", lambda *a, **kw: _FAKE_PKG_INFO)
+    monkeypatch.setattr(dl_mod, "download_file", lambda *a, **kw: Path("/fake/path"))
     monkeypatch.setattr(ext_mod, "extract_python_files", lambda _: (
         [ExtractedFile(
             filename="pyproject.toml",
@@ -154,8 +165,10 @@ def test_scanner_does_not_skip_setup_cfg_when_tomllib_unavailable(monkeypatch):
     import pkgxray.downloader as dl_mod
     import pkgxray.extractor as ext_mod
     from pkgxray.analyzers.base import ExtractedFile
+    from pathlib import Path
 
-    monkeypatch.setattr(dl_mod, "download_package", lambda *a, **kw: ("/fake/path", "1.0.0"))
+    monkeypatch.setattr(dl_mod, "get_package_info", lambda *a, **kw: _FAKE_PKG_INFO)
+    monkeypatch.setattr(dl_mod, "download_file", lambda *a, **kw: Path("/fake/path"))
     monkeypatch.setattr(ext_mod, "extract_python_files", lambda _: (
         [ExtractedFile(
             filename="setup.cfg",

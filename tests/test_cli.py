@@ -128,12 +128,18 @@ class TestScannerLogging:
         broken = self._make_broken_analyzer()
         extracted = self._make_extracted_file()
 
-        with patch("pkgxray.scanner.downloader.download_package", return_value=(archive, "1.0")):
-            with patch("pkgxray.scanner.extractor.extract_python_files", return_value=([extracted], 0)):
-                with patch("pkgxray.scanner.get_all_analyzers", return_value=[broken]):
-                    with caplog.at_level(logging.WARNING, logger="pkgxray.scanner"):
-                        from pkgxray.scanner import scan
-                        scan("test-pkg")
+        _fake_info = {
+            "info": {"version": "1.0"},
+            "urls": [{"url": "http://x/pkg-1.0.tar.gz", "filename": "pkg-1.0.tar.gz",
+                      "packagetype": "sdist", "digests": {}}],
+        }
+        with patch("pkgxray.scanner.downloader.get_package_info", return_value=_fake_info):
+            with patch("pkgxray.scanner.downloader.download_file", return_value=archive):
+                with patch("pkgxray.scanner.extractor.extract_python_files", return_value=([extracted], 0)):
+                    with patch("pkgxray.scanner.get_all_analyzers", return_value=[broken]):
+                        with caplog.at_level(logging.WARNING, logger="pkgxray.scanner"):
+                            from pkgxray.scanner import scan
+                            scan("test-pkg")
 
         warning_texts = [r.message for r in caplog.records if r.levelno == logging.WARNING]
         assert any("broken_test" in msg for msg in warning_texts), (
@@ -148,11 +154,86 @@ class TestScannerLogging:
         broken = self._make_broken_analyzer()
         extracted = self._make_extracted_file()
 
-        with patch("pkgxray.scanner.downloader.download_package", return_value=(archive, "1.0")):
-            with patch("pkgxray.scanner.extractor.extract_python_files", return_value=([extracted], 0)):
-                with patch("pkgxray.scanner.get_all_analyzers", return_value=[broken]):
-                    from pkgxray.scanner import scan
-                    result = scan("test-pkg")
+        _fake_info = {
+            "info": {"version": "1.0"},
+            "urls": [{"url": "http://x/pkg-1.0.tar.gz", "filename": "pkg-1.0.tar.gz",
+                      "packagetype": "sdist", "digests": {}}],
+        }
+        with patch("pkgxray.scanner.downloader.get_package_info", return_value=_fake_info):
+            with patch("pkgxray.scanner.downloader.download_file", return_value=archive):
+                with patch("pkgxray.scanner.extractor.extract_python_files", return_value=([extracted], 0)):
+                    with patch("pkgxray.scanner.get_all_analyzers", return_value=[broken]):
+                        from pkgxray.scanner import scan
+                        result = scan("test-pkg")
 
         assert result.risk_score == 0
         assert result.risk_level == "LOW"
+
+
+# ── #28: --index-url flag ────────────────────────────────────────────────────
+
+class TestIndexUrl:
+    def test_index_url_flag_accepted(self):
+        """--index-url must be accepted without argument parsing errors."""
+        runner = CliRunner()
+        with patch("pkgxray.cli.scan", return_value=_make_result(10, "LOW")):
+            result = runner.invoke(
+                main, ["scan", "test-pkg", "--index-url", "https://my.registry.example"]
+            )
+        assert result.exit_code == 0
+
+    def test_index_url_passed_to_scan(self):
+        """--index-url value must be forwarded to scan() as registry_url."""
+        runner = CliRunner()
+        captured = {}
+
+        def fake_scan(package_name, version=None, *, registry_url=None):
+            captured["registry_url"] = registry_url
+            return _make_result(0)
+
+        with patch("pkgxray.cli.scan", side_effect=fake_scan):
+            runner.invoke(
+                main, ["scan", "test-pkg", "--index-url", "https://my.registry.example"]
+            )
+
+        assert captured.get("registry_url") == "https://my.registry.example"
+
+    def test_no_index_url_passes_none(self):
+        """Without --index-url, registry_url must be None (default PyPI)."""
+        runner = CliRunner()
+        captured = {}
+
+        def fake_scan(package_name, version=None, *, registry_url=None):
+            captured["registry_url"] = registry_url
+            return _make_result(0)
+
+        with patch("pkgxray.cli.scan", side_effect=fake_scan):
+            runner.invoke(main, ["scan", "test-pkg"])
+
+        assert captured.get("registry_url") is None
+
+
+# ── #27: clear-cache command ─────────────────────────────────────────────────
+
+class TestClearCacheCommand:
+    def test_clear_cache_command_exits_0(self):
+        """pkgxray clear-cache must exit with code 0."""
+        runner = CliRunner()
+        with patch("pkgxray._disk_cache.clear", return_value=0):
+            result = runner.invoke(main, ["clear-cache"])
+        assert result.exit_code == 0
+
+    def test_clear_cache_calls_disk_clear(self):
+        """pkgxray clear-cache must invoke _disk_cache.clear()."""
+        runner = CliRunner()
+        with patch("pkgxray._disk_cache.clear", return_value=3) as mock_clear:
+            result = runner.invoke(main, ["clear-cache"])
+        mock_clear.assert_called_once()
+        assert result.exit_code == 0
+
+    def test_clear_cache_output_mentions_count(self):
+        """Output must include the number of removed cache files."""
+        runner = CliRunner()
+        with patch("pkgxray._disk_cache.clear", return_value=5):
+            result = runner.invoke(main, ["clear-cache"])
+        assert "5" in result.output

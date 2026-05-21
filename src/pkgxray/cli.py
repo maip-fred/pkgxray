@@ -38,7 +38,11 @@ def main():
     "--verbose", is_flag=True, default=False,
     help="Mostrar logs de depuración (fallos de analizadores, pasos del pipeline)",
 )
-def scan_cmd(package_name, version, output_format, output, fail_above, verbose):
+@click.option(
+    "--index-url", default=None,
+    help="URL base del registro PyPI privado (también: env PKGXRAY_INDEX_URL)",
+)
+def scan_cmd(package_name, version, output_format, output, fail_above, verbose, index_url):
     """Analiza un paquete de PyPI en busca de comportamiento sospechoso."""
     if verbose:
         logging.basicConfig(
@@ -48,7 +52,7 @@ def scan_cmd(package_name, version, output_format, output, fail_above, verbose):
 
     try:
         console.print(f"\n[bold]Analizando [cyan]{package_name}[/cyan]...[/bold]\n")
-        result = scan(package_name, version)
+        result = scan(package_name, version, registry_url=index_url)
         generate_report(result, output_format=output_format, output_path=output)
 
         if output:
@@ -72,3 +76,14 @@ def scan_cmd(package_name, version, output_format, output, fail_above, verbose):
     except Exception as e:
         console.print(f"[red]Error inesperado: {e}[/red]")
         raise SystemExit(1)
+
+
+@main.command(name="clear-cache")
+def clear_cache_cmd():
+    """Elimina todos los resultados del caché persistente en disco."""
+    from pkgxray import _disk_cache
+    from pkgxray.scanner import clear_cache as clear_session_cache
+
+    n_disk = _disk_cache.clear()
+    clear_session_cache()
+    console.print(f"[green]Caché eliminado: {n_disk} resultado(s) en disco.[/green]")

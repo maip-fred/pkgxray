@@ -65,15 +65,23 @@ def test_multiple_skipped_files():
 # Scanner integration: syntax-broken file is tracked, not silently dropped
 # ---------------------------------------------------------------------------
 
+_FAKE_INFO = {
+    "info": {"version": "1.0.0"},
+    "urls": [{"url": "http://x/fake-1.0.0.tar.gz", "filename": "fake-1.0.0.tar.gz",
+              "packagetype": "sdist", "digests": {}}],
+}
+
+
 def test_scanner_tracks_unparseable_file(monkeypatch):
     """When a .py file has a syntax error the scanner records it in skipped_files."""
     import pkgxray.scanner as scanner_mod
     import pkgxray.downloader as dl_mod
     import pkgxray.extractor as ext_mod
     from pkgxray.analyzers.base import ExtractedFile
+    from pathlib import Path
 
-    # Stub out download and extraction
-    monkeypatch.setattr(dl_mod, "download_package", lambda *a, **kw: ("/fake/path", "1.0.0"))
+    monkeypatch.setattr(dl_mod, "get_package_info", lambda *a, **kw: _FAKE_INFO)
+    monkeypatch.setattr(dl_mod, "download_file", lambda *a, **kw: Path("/fake/path"))
     monkeypatch.setattr(ext_mod, "extract_python_files", lambda _: (
         [
             ExtractedFile(filename="clean.py",   content="x = 1\n"),
@@ -94,8 +102,10 @@ def test_scanner_clean_files_not_skipped(monkeypatch):
     import pkgxray.downloader as dl_mod
     import pkgxray.extractor as ext_mod
     from pkgxray.analyzers.base import ExtractedFile
+    from pathlib import Path
 
-    monkeypatch.setattr(dl_mod, "download_package", lambda *a, **kw: ("/fake/path", "1.0.0"))
+    monkeypatch.setattr(dl_mod, "get_package_info", lambda *a, **kw: _FAKE_INFO)
+    monkeypatch.setattr(dl_mod, "download_file", lambda *a, **kw: Path("/fake/path"))
     monkeypatch.setattr(ext_mod, "extract_python_files", lambda _: (
         [ExtractedFile(filename="utils.py", content="def add(a, b):\n    return a + b\n")], 0,
     ))

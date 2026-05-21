@@ -2,7 +2,7 @@
 
 import hashlib
 import json
-import shutil
+import os
 import tempfile
 import urllib.error
 import urllib.request
@@ -24,28 +24,42 @@ class DownloadError(Exception):
     """Se lanza cuando un paquete no puede descargarse."""
 
 
-PYPI_API_URL = "https://pypi.org/pypi/{package_name}/json"
-PYPI_API_VERSION_URL = "https://pypi.org/pypi/{package_name}/{version}/json"
+_DEFAULT_REGISTRY = "https://pypi.org"
 
 
-def get_package_info(package_name: str, version: Optional[str] = None) -> dict:
-    """Obtiene los metadatos de un paquete desde la API JSON de PyPI.
+def _resolve_registry(registry_url: Optional[str]) -> str:
+    """Return the registry base URL: explicit arg > env var > default PyPI."""
+    if registry_url:
+        return registry_url.rstrip("/")
+    env = os.environ.get("PKGXRAY_INDEX_URL", "")
+    return env.rstrip("/") if env else _DEFAULT_REGISTRY
+
+
+def get_package_info(
+    package_name: str,
+    version: Optional[str] = None,
+    *,
+    registry_url: Optional[str] = None,
+) -> dict:
+    """Obtiene los metadatos de un paquete desde la API JSON del registro.
 
     Args:
         package_name: Nombre del paquete en PyPI.
         version: Versión específica opcional a consultar.
+        registry_url: URL base del registro PyPI. None usa PKGXRAY_INDEX_URL o PyPI.
 
     Returns:
-        Respuesta JSON de PyPI ya parseada.
+        Respuesta JSON del registro ya parseada.
 
     Raises:
         PackageNotFoundError: Si el paquete (o la versión) no existe.
         DownloadError: Por errores de red o de parseo.
     """
+    registry = _resolve_registry(registry_url)
     if version:
-        url = PYPI_API_VERSION_URL.format(package_name=package_name, version=version)
+        url = f"{registry}/pypi/{package_name}/{version}/json"
     else:
-        url = PYPI_API_URL.format(package_name=package_name)
+        url = f"{registry}/pypi/{package_name}/json"
 
     try:
         req = urllib.request.Request(url, headers={"User-Agent": f"pkgxray/{_PKGXRAY_VERSION}"})
@@ -54,13 +68,13 @@ def get_package_info(package_name: str, version: Optional[str] = None) -> dict:
     except urllib.error.HTTPError as e:
         if e.code == 404:
             raise PackageNotFoundError(
-                f"El paquete '{package_name}' no fue encontrado en PyPI"
+                f"El paquete '{package_name}' no fue encontrado en el registro"
             ) from e
         raise DownloadError(f"Error HTTP {e.code} al obtener '{package_name}'") from e
     except urllib.error.URLError as e:
         raise DownloadError(f"Error de red al obtener '{package_name}': {e}") from e
     except json.JSONDecodeError as e:
-        raise DownloadError(f"Error al parsear la respuesta de PyPI para '{package_name}': {e}") from e
+        raise DownloadError(f"Error al parsear la respuesta del registro para '{package_name}': {e}") from e
 
 
 def find_best_distribution(package_info: dict) -> Tuple[str, str, Optional[str]]:
@@ -69,7 +83,7 @@ def find_best_distribution(package_info: dict) -> Tuple[str, str, Optional[str]]
     Orden de preferencia: sdist (.tar.gz) > wheel multiplataforma > cualquier distribución.
 
     Args:
-        package_info: Respuesta JSON de PyPI para el paquete.
+        package_info: Respuesta JSON del registro para el paquete.
 
     Returns:
         Tupla (url_de_descarga, nombre_de_archivo, sha256_esperado_o_None).
@@ -101,48 +115,39 @@ def find_best_distribution(package_info: dict) -> Tuple[str, str, Optional[str]]
     raise DownloadError("No se encontró ninguna distribución adecuada para este paquete")
 
 
-def download_package(
-    package_name: str,
-    version: Optional[str] = None,
-    dest_dir: Optional[str] = None,
-) -> Tuple[Path, str]:
-    """Descarga el archivo de un paquete de PyPI sin instalarlo.
+def download_file(
+    url: str,
+    expected_sha256: Optional[str],
+    filename: str,
+    dest_dir: str,
+) -> Path:
+    """Descarga un archivo desde *url* a *dest_dir/filename* y verifica el SHA-256.
 
     Args:
-        package_name: Nombre del paquete en PyPI.
-        version: Versión específica opcional.
-        dest_dir: Directorio donde guardar el archivo. Si es None, se crea un directorio temporal.
+        url: URL de descarga del archivo.
+        expected_sha256: Digest SHA-256 esperado, o None para omitir la verificación.
+        filename: Nombre del archivo de destino.
+        dest_dir: Directorio donde guardar el archivo.
 
     Returns:
-        Tupla (Path al archivo descargado, cadena con la versión real).
+        Path al archivo descargado.
 
     Raises:
-        PackageNotFoundError: Si el paquete no existe en PyPI.
-        DownloadError: Por errores durante la descarga.
+        DownloadError: Por errores de red o discrepancia de checksum.
     """
-    if dest_dir is None:
-        dest_dir = tempfile.mkdtemp(prefix="pkgxray_")
-
     dest_path = Path(dest_dir)
     dest_path.mkdir(parents=True, exist_ok=True)
+    output_file = dest_path / filename
 
     try:
-        package_info = get_package_info(package_name, version)
-        actual_version = package_info["info"]["version"]
-        download_url, filename, expected_sha256 = find_best_distribution(package_info)
-
-        output_file = dest_path / filename
-
-        # #16: download with timeout (urlretrieve has no timeout parameter)
         req = urllib.request.Request(
-            download_url,
+            url,
             headers={"User-Agent": f"pkgxray/{_PKGXRAY_VERSION}"},
         )
         with urllib.request.urlopen(req, timeout=30) as response:
             data = response.read()
         output_file.write_bytes(data)
 
-        # #15: verify SHA-256 digest provided by PyPI
         if expected_sha256:
             actual_sha256 = hashlib.sha256(data).hexdigest()
             if actual_sha256 != expected_sha256:
@@ -151,7 +156,43 @@ def download_package(
                     f"SHA-256 mismatch para '{filename}': "
                     f"esperado {expected_sha256}, obtenido {actual_sha256}"
                 )
+        return output_file
+    except DownloadError:
+        raise
+    except Exception as e:
+        raise DownloadError(f"Error al descargar '{filename}': {e}") from e
 
+
+def download_package(
+    package_name: str,
+    version: Optional[str] = None,
+    dest_dir: Optional[str] = None,
+    *,
+    registry_url: Optional[str] = None,
+) -> Tuple[Path, str]:
+    """Descarga el archivo de un paquete del registro sin instalarlo.
+
+    Args:
+        package_name: Nombre del paquete en PyPI.
+        version: Versión específica opcional.
+        dest_dir: Directorio donde guardar el archivo. Si es None, se crea un directorio temporal.
+        registry_url: URL base del registro PyPI. None usa PKGXRAY_INDEX_URL o PyPI.
+
+    Returns:
+        Tupla (Path al archivo descargado, cadena con la versión real).
+
+    Raises:
+        PackageNotFoundError: Si el paquete no existe en el registro.
+        DownloadError: Por errores durante la descarga.
+    """
+    if dest_dir is None:
+        dest_dir = tempfile.mkdtemp(prefix="pkgxray_")
+
+    try:
+        package_info = get_package_info(package_name, version, registry_url=registry_url)
+        actual_version = package_info["info"]["version"]
+        download_url, filename, expected_sha256 = find_best_distribution(package_info)
+        output_file = download_file(download_url, expected_sha256, filename, dest_dir)
         return output_file, actual_version
     except (PackageNotFoundError, DownloadError):
         raise

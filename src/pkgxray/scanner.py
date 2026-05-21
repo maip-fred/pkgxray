@@ -10,7 +10,7 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-from pkgxray import downloader, extractor, scorer
+from pkgxray import _disk_cache, downloader, extractor, scorer
 from pkgxray.analyzers import get_all_analyzers
 from pkgxray.analyzers.base import ScanResult, build_parent_map, collect_import_aliases
 from pkgxray.analyzers.config_files import ConfigFileAnalyzer, TOMLLIB_AVAILABLE
@@ -33,7 +33,12 @@ def clear_cache() -> None:
     _SCAN_CACHE.clear()
 
 
-def scan(package_name: str, version: Optional[str] = None) -> ScanResult:
+def scan(
+    package_name: str,
+    version: Optional[str] = None,
+    *,
+    registry_url: Optional[str] = None,
+) -> ScanResult:
     """Analiza un paquete de PyPI en busca de comportamiento sospechoso sin instalarlo.
 
     Descarga el archivo del paquete, extrae los archivos Python, ejecuta todos los
@@ -42,32 +47,51 @@ def scan(package_name: str, version: Optional[str] = None) -> ScanResult:
     Args:
         package_name: Nombre del paquete de PyPI a analizar.
         version: Versión específica opcional. Si es None, analiza la última versión.
+        registry_url: URL base del registro PyPI privado. None usa PKGXRAY_INDEX_URL o PyPI.
 
     Returns:
         ScanResult con todos los hallazgos, puntaje y metadatos.
 
     Raises:
-        PackageNotFoundError: Si el paquete no se encuentra en PyPI.
+        PackageNotFoundError: Si el paquete no se encuentra en el registro.
         DownloadError: Si el paquete no puede descargarse.
     """
-    # Cache lookup: only for explicitly pinned versions.
+    # Paso 1: Session cache lookup (only for pinned versions).
     if version is not None:
         cache_key = (package_name.lower(), version)
         if cache_key in _SCAN_CACHE:
-            logger.debug("Cache hit for %s==%s", package_name, version)
+            logger.debug("Session cache hit for %s==%s", package_name, version)
             return _SCAN_CACHE[cache_key]
+
+    # Paso 2: Fetch package metadata and select distribution.
+    info = downloader.get_package_info(package_name, version, registry_url=registry_url)
+    actual_version = info["info"]["version"]
+    url, filename, sha256 = downloader.find_best_distribution(info)
+
+    # Paso 3: Disk cache lookup (only when PyPI provided a SHA-256 for the archive).
+    if sha256:
+        disk_result = _disk_cache.read(sha256)
+        if disk_result is not None:
+            logger.debug(
+                "Disk cache hit for %s==%s (sha256=%.8s...)",
+                package_name, actual_version, sha256,
+            )
+            if version is not None:
+                cached = copy.deepcopy(disk_result)
+                _SCAN_CACHE[(package_name.lower(), actual_version)] = cached
+                if version != actual_version:
+                    _SCAN_CACHE[(package_name.lower(), version)] = cached
+            return disk_result
 
     tmp_dir = tempfile.mkdtemp(prefix="pkgxray_scan_")
     try:
-        # Paso 1: Descarga
-        archive_path, actual_version = downloader.download_package(
-            package_name, version, dest_dir=tmp_dir
-        )
+        # Paso 4: Descarga
+        archive_path = downloader.download_file(url, sha256, filename, tmp_dir)
 
-        # Paso 2: Extracción — returns (files, binary_count) in one archive pass
+        # Paso 5: Extracción — returns (files, binary_count) in one archive pass
         extracted_files, binary_files_found = extractor.extract_python_files(archive_path)
 
-        # Paso 3: Análisis
+        # Paso 6: Análisis
         analyzers = get_all_analyzers()
         all_findings = []
         skipped_files = []
@@ -132,11 +156,11 @@ def scan(package_name: str, version: Optional[str] = None) -> ScanResult:
                     )
                     continue
 
-        # Paso 4: Puntaje
+        # Paso 7: Puntaje
         risk_score, risk_level = scorer.calculate_risk_score(all_findings)
         summary = scorer.get_summary(all_findings)
 
-        # Paso 5: Retornar resultado
+        # Paso 8: Construir resultado
         result = ScanResult(
             package_name=package_name,
             version=actual_version,
@@ -150,7 +174,11 @@ def scan(package_name: str, version: Optional[str] = None) -> ScanResult:
             binary_files_found=binary_files_found,
         )
 
-        # Cache pinned-version results for reuse within this session.
+        # Paso 9: Persist to disk cache (keyed by archive sha256, survives across sessions).
+        if sha256:
+            _disk_cache.write(sha256, result)
+
+        # Paso 10: Cache pinned-version results for reuse within this session.
         # Store a deep copy so callers that mutate the returned object (#14)
         # don't corrupt future cache hits.
         if version is not None:
