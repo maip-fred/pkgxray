@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Optional
 
 from rich.console import Console
+from rich.markup import escape as markup_escape
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
@@ -26,9 +27,6 @@ _LEVEL_COLORS = {
     "CRITICAL": "red",
 }
 
-_console = Console()
-
-
 def print_terminal_report(result: ScanResult) -> None:
     """Imprime un reporte con colores en la terminal usando rich.
 
@@ -37,11 +35,11 @@ def print_terminal_report(result: ScanResult) -> None:
     """
     console = Console(width=200)
 
-    # Encabezado
+    # Encabezado — markup_escape evita inyección de Rich markup via package_name (#13)
     console.print(Panel(
-        f"[bold]Paquete:[/bold] {result.package_name}  "
-        f"[bold]Versión:[/bold] {result.version}  "
-        f"[bold]Fecha:[/bold] {result.scan_date}",
+        f"[bold]Paquete:[/bold] {markup_escape(result.package_name)}  "
+        f"[bold]Versión:[/bold] {markup_escape(result.version)}  "
+        f"[bold]Fecha:[/bold] {markup_escape(result.scan_date)}",
         title="[bold blue]pkgxray — Reporte de Seguridad[/bold blue]",
         border_style="blue",
     ))

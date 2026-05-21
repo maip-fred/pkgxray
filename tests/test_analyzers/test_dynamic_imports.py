@@ -112,3 +112,37 @@ def test_unrelated_alias_not_flagged():
     code = "import os as il\nil.import_module('x')\n"
     findings = analyzer.analyze(code, "test.py")
     assert findings == [], "os aliased as 'il' must not trigger importlib check"
+
+
+# ── #11: importlib.util.spec_from_file_location ──────────────────────────────
+
+def test_detects_spec_from_file_location():
+    """importlib.util.spec_from_file_location() must be detected — loads arbitrary files."""
+    analyzer = DynamicImportAnalyzer()
+    code = (
+        "import importlib\n"
+        "def load_plugin(path):\n"
+        "    spec = importlib.util.spec_from_file_location('mod', path)\n"
+    )
+    findings = analyzer.analyze(code, "test.py")
+    assert len(findings) >= 1, "importlib.util.spec_from_file_location must be detected"
+    assert any(f.severity in (Severity.HIGH, Severity.CRITICAL) for f in findings)
+
+
+def test_spec_from_file_location_at_module_level_critical():
+    """importlib.util.spec_from_file_location() at module level → CRITICAL."""
+    analyzer = DynamicImportAnalyzer()
+    code = (
+        "import importlib\n"
+        "spec = importlib.util.spec_from_file_location('evil', '/tmp/payload.py')\n"
+    )
+    findings = analyzer.analyze(code, "test.py")
+    assert any(f.severity == Severity.CRITICAL for f in findings)
+
+
+def test_non_importlib_spec_from_file_location_not_flagged():
+    """other.util.spec_from_file_location() must NOT be flagged (not importlib)."""
+    analyzer = DynamicImportAnalyzer()
+    code = "import mylib\nspec = mylib.util.spec_from_file_location('x', 'y')\n"
+    findings = analyzer.analyze(code, "test.py")
+    assert findings == []

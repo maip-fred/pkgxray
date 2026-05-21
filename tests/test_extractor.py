@@ -188,3 +188,60 @@ def test_binary_files_not_extracted(tmp_path):
     assert any("module.py" in fn for fn in filenames)
     assert not any(fn.endswith(".so") for fn in filenames)
     assert binary_count == 1
+
+
+# ── #24: previously uncovered branches ───────────────────────────────────────
+
+def test_corrupted_tarball_does_not_crash(tmp_path):
+    """A corrupted .tar.gz must return empty list, not raise."""
+    archive = tmp_path / "corrupt.tar.gz"
+    archive.write_bytes(b"not a real tarball at all!!!")
+    result, binary_count = extract_python_files(archive)
+    assert result == []
+    assert binary_count == 0
+
+
+def test_corrupted_zip_does_not_crash(tmp_path):
+    """A corrupted .zip must return empty list, not raise."""
+    archive = tmp_path / "corrupt.zip"
+    archive.write_bytes(b"this is not a zip file")
+    result, binary_count = extract_python_files(archive)
+    assert result == []
+    assert binary_count == 0
+
+
+def test_is_config_flag_set_on_pyproject_toml():
+    """Extracted pyproject.toml must have is_config=True."""
+    archive = _make_tarball({"pkg/pyproject.toml": '[build-system]\nrequires = ["setuptools"]'})
+    try:
+        files, _ = extract_python_files(archive)
+        config_files = [f for f in files if f.is_config]
+        assert len(config_files) >= 1
+        assert any("pyproject.toml" in f.filename for f in config_files)
+    finally:
+        archive.unlink()
+
+
+def test_is_config_flag_set_on_setup_cfg():
+    """Extracted setup.cfg must have is_config=True."""
+    archive = _make_tarball({"pkg/setup.cfg": "[metadata]\nname = mypkg\n"})
+    try:
+        files, _ = extract_python_files(archive)
+        config_files = [f for f in files if f.is_config]
+        assert len(config_files) >= 1
+    finally:
+        archive.unlink()
+
+
+def test_unsupported_format_raises():
+    """Unsupported archive format should raise ValueError."""
+    archive = _make_tarball({"pkg/module.py": "x = 1"})
+    try:
+        import shutil
+        bad = Path(str(archive).replace(".tar.gz", ".rar"))
+        shutil.copy(archive, bad)
+        with pytest.raises(ValueError, match="no soportado"):
+            extract_python_files(bad)
+        bad.unlink()
+    finally:
+        archive.unlink()

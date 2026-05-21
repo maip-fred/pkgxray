@@ -14,6 +14,8 @@ _SUBPROCESS_ATTRS = {
     "Popen": Severity.CRITICAL,
     "check_output": Severity.HIGH,
     "check_call": Severity.HIGH,
+    "getoutput": Severity.HIGH,           # #2: executes shell commands
+    "getstatusoutput": Severity.HIGH,     # #2: executes shell commands
 }
 
 _OS_ATTRS = {
@@ -21,7 +23,18 @@ _OS_ATTRS = {
     "popen": Severity.CRITICAL,
     "execvp": Severity.CRITICAL,
     "execv": Severity.CRITICAL,
+    "spawnl": Severity.CRITICAL,          # #1: os.spawn* family
+    "spawnle": Severity.CRITICAL,
+    "spawnlp": Severity.CRITICAL,
+    "spawnlpe": Severity.CRITICAL,
+    "spawnv": Severity.CRITICAL,
+    "spawnve": Severity.CRITICAL,
+    "spawnvp": Severity.CRITICAL,
+    "spawnvpe": Severity.CRITICAL,
 }
+
+# #3: pty.spawn() opens an interactive shell
+_PTY_ATTRS = {"spawn": Severity.CRITICAL}
 
 
 class SubprocessAnalyzer(BaseAnalyzer):
@@ -83,13 +96,26 @@ class SubprocessAnalyzer(BaseAnalyzer):
                         analyzer_name=self.name,
                     ))
 
-                # os.system/popen/execvp/execv — including aliased module names
+                # os.system/popen/execvp/execv/spawn* — including aliased module names
                 elif canonical == "os" and func.attr in _OS_ATTRS:
                     severity = Severity.CRITICAL
                     suffix = " — ejecutado al nivel del módulo, corre al importar" if at_module else ""
                     findings.append(Finding(
                         severity=severity,
                         description=f"Se detectó llamada a os.{func.attr}() — ejecuta comandos del sistema{suffix}",
+                        filename=filename,
+                        line_number=line_num,
+                        code_snippet=snippet,
+                        analyzer_name=self.name,
+                    ))
+
+                # pty.spawn() — opens an interactive shell (#3)
+                elif canonical == "pty" and func.attr in _PTY_ATTRS:
+                    severity = Severity.CRITICAL
+                    suffix = " — ejecutado al nivel del módulo, corre al importar" if at_module else ""
+                    findings.append(Finding(
+                        severity=severity,
+                        description=f"Se detectó llamada a pty.{func.attr}() — abre una shell interactiva{suffix}",
                         filename=filename,
                         line_number=line_num,
                         code_snippet=snippet,

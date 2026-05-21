@@ -8,6 +8,18 @@ from pkgxray.analyzers.base import BaseAnalyzer, Finding, Severity
 
 _HEX_ESCAPE_PATTERN = re.compile(r"(\\x[0-9a-fA-F]{2}){10,}")
 
+# Attribute names that decode from base64
+_B64_DECODE_ATTRS = {"b64decode", "b64decodebytes"}
+
+
+def _is_b64decode_call(func_node) -> bool:
+    """Returns True if func_node represents a base64 decode call (any form)."""
+    if isinstance(func_node, ast.Attribute):
+        return func_node.attr in _B64_DECODE_ATTRS
+    if isinstance(func_node, ast.Name):
+        return func_node.id in _B64_DECODE_ATTRS
+    return False
+
 
 class ObfuscationAnalyzer(BaseAnalyzer):
     name = "obfuscation"
@@ -31,6 +43,16 @@ class ObfuscationAnalyzer(BaseAnalyzer):
         lines = source_code.splitlines()
         findings = []
 
+        # #9: pre-pass — collect variable names that hold b64decode results
+        # Detects: payload = base64.b64decode(...); exec(payload)
+        _decode_vars: set = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign) and isinstance(node.value, ast.Call):
+                if _is_b64decode_call(node.value.func):
+                    for target in node.targets:
+                        if isinstance(target, ast.Name):
+                            _decode_vars.add(target.id)
+
         for node in ast.walk(tree):
             # exec(base64.b64decode(...)) — patrón combinado = CRITICAL
             if isinstance(node, ast.Call):
@@ -38,22 +60,42 @@ class ObfuscationAnalyzer(BaseAnalyzer):
                 line_num = node.lineno
                 snippet = lines[line_num - 1].strip()[:200] if line_num <= len(lines) else ""
 
-                # Detectar exec(base64.b64decode(...))
                 if isinstance(func, ast.Name) and func.id in ("exec", "eval"):
                     if node.args:
                         first_arg = node.args[0]
-                        if isinstance(first_arg, ast.Call):
-                            inner_func = first_arg.func
-                            if isinstance(inner_func, ast.Attribute) and inner_func.attr == "b64decode":
-                                findings.append(Finding(
-                                    severity=Severity.CRITICAL,
-                                    description="exec/eval combinado con base64.b64decode() — patrón clásico de malware",
-                                    filename=filename,
-                                    line_number=line_num,
-                                    code_snippet=snippet,
-                                    analyzer_name=self.name,
-                                ))
-                                continue
+
+                        # Determine the "inner" call, unwrapping compile() if present (#10)
+                        inner_call = first_arg
+                        if (isinstance(inner_call, ast.Call) and
+                                isinstance(inner_call.func, ast.Name) and
+                                inner_call.func.id == "compile" and
+                                inner_call.args and
+                                isinstance(inner_call.args[0], ast.Call)):
+                            inner_call = inner_call.args[0]
+
+                        # exec(base64.b64decode(...)) or exec(compile(b64decode(...)))
+                        if isinstance(inner_call, ast.Call) and _is_b64decode_call(inner_call.func):
+                            findings.append(Finding(
+                                severity=Severity.CRITICAL,
+                                description="exec/eval combinado con base64.b64decode() — patrón clásico de malware",
+                                filename=filename,
+                                line_number=line_num,
+                                code_snippet=snippet,
+                                analyzer_name=self.name,
+                            ))
+                            continue
+
+                        # #9: exec(payload) where payload = base64.b64decode(...)
+                        if isinstance(first_arg, ast.Name) and first_arg.id in _decode_vars:
+                            findings.append(Finding(
+                                severity=Severity.CRITICAL,
+                                description="exec/eval aplicado a variable con resultado de base64.b64decode() — patrón de malware en dos pasos",
+                                filename=filename,
+                                line_number=line_num,
+                                code_snippet=snippet,
+                                analyzer_name=self.name,
+                            ))
+                            continue
 
                 # codecs.decode() con rot13 u otro encoding sospechoso
                 # (base64.b64decode() aislado es muy común y legítimo; solo se reporta

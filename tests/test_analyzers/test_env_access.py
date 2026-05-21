@@ -143,3 +143,29 @@ def test_parser_getenv_not_flagged():
     code = "value = parser.getenv('DATABASE_URL')\n"
     findings = analyzer.analyze(code, "test.py")
     assert findings == []
+
+
+# ── #8: aliased os module ────────────────────────────────────────────────────
+
+def test_aliased_os_environ_subscript_detected():
+    """import os as operating_system; operating_system.environ['AWS_KEY'] must be detected."""
+    analyzer = EnvAccessAnalyzer()
+    code = "import os as operating_system\nsecret = operating_system.environ['AWS_SECRET_ACCESS_KEY']\n"
+    findings = analyzer.analyze(code, "test.py")
+    assert len(findings) >= 1, "Aliased os.environ subscript must be detected"
+
+
+def test_aliased_os_getenv_detected():
+    """import os as o; o.getenv('TOKEN') must be detected."""
+    analyzer = EnvAccessAnalyzer()
+    code = "import os as o\nval = o.getenv('GITHUB_TOKEN')\n"
+    findings = analyzer.analyze(code, "test.py")
+    assert len(findings) >= 1, "Aliased os.getenv must be detected"
+
+
+def test_aliased_os_environ_get_detected():
+    """import os as o; o.environ.get('SECRET') must be detected."""
+    analyzer = EnvAccessAnalyzer()
+    code = "import os as o\nval = o.environ.get('AWS_ACCESS_KEY')\n"
+    findings = analyzer.analyze(code, "test.py")
+    assert len(findings) >= 1, "Aliased os.environ.get must be detected"

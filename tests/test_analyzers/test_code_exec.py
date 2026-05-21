@@ -66,3 +66,58 @@ def test_class_body_treated_as_module_level():
     code = 'class Malicious:\n    exec("payload")'
     findings = analyzer.analyze(code, 'test.py')
     assert any(f.severity == Severity.CRITICAL for f in findings)
+
+
+# ── #4: ctypes detection ─────────────────────────────────────────────────────
+
+def test_detects_ctypes_cdll():
+    """ctypes.CDLL('evil.so') must be detected as CRITICAL."""
+    analyzer = CodeExecAnalyzer()
+    code = 'import ctypes\ndef load():\n    ctypes.CDLL("/tmp/evil.so")'
+    findings = analyzer.analyze(code, 'test.py')
+    assert len(findings) >= 1
+    assert any(f.severity == Severity.CRITICAL for f in findings)
+    assert any("ctypes" in f.description for f in findings)
+
+
+def test_detects_ctypes_cdll_loadlibrary():
+    """ctypes.cdll.LoadLibrary('evil.so') must be detected as CRITICAL."""
+    analyzer = CodeExecAnalyzer()
+    code = 'import ctypes\ndef load():\n    ctypes.cdll.LoadLibrary("/tmp/evil.so")'
+    findings = analyzer.analyze(code, 'test.py')
+    assert len(findings) >= 1
+    assert any(f.severity == Severity.CRITICAL for f in findings)
+
+
+def test_detects_ctypes_aliased():
+    """import ctypes as ct; ct.CDLL('lib.so') must be detected."""
+    analyzer = CodeExecAnalyzer()
+    code = 'import ctypes as ct\ndef load():\n    ct.CDLL("evil.so")'
+    findings = analyzer.analyze(code, 'test.py')
+    assert len(findings) >= 1
+
+
+def test_ctypes_at_module_level_critical():
+    """ctypes.CDLL() at module level → CRITICAL (runs on import)."""
+    analyzer = CodeExecAnalyzer()
+    code = 'import ctypes\nctypes.CDLL("/tmp/backdoor.so")'
+    findings = analyzer.analyze(code, 'test.py')
+    assert any(f.severity == Severity.CRITICAL for f in findings)
+
+
+# ── #5: variable-assignment aliasing ─────────────────────────────────────────
+
+def test_detects_variable_alias_exec():
+    """e = exec; e('payload') must be detected."""
+    analyzer = CodeExecAnalyzer()
+    code = 'e = exec\ne("import os; os.system(\'id\')")'
+    findings = analyzer.analyze(code, 'test.py')
+    assert len(findings) >= 1, "Variable alias of exec must be detected"
+
+
+def test_detects_variable_alias_eval():
+    """run = eval; run(code) must be detected."""
+    analyzer = CodeExecAnalyzer()
+    code = 'def run_code():\n    run = eval\n    run(user_input)'
+    findings = analyzer.analyze(code, 'test.py')
+    assert len(findings) >= 1, "Variable alias of eval must be detected"

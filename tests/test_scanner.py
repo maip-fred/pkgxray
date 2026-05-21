@@ -43,21 +43,28 @@ def test_scan_unknown_package_raises():
 
 
 def test_cache_returns_same_object_for_pinned_version(monkeypatch):
-    """scan() with a pinned version must return the same object on second call."""
+    """scan() with a pinned version must hit the cache on the second call (no re-download)."""
     import pkgxray.scanner as scanner_mod
     import pkgxray.extractor as ext_mod
     import pkgxray.downloader as dl_mod
 
     scanner_mod.clear_cache()
 
-    monkeypatch.setattr(dl_mod, "download_package",
-                        lambda *a, **kw: ("/fake/pkg.tar.gz", "1.2.3"))
+    call_count = {"n": 0}
+
+    def fake_download(*a, **kw):
+        call_count["n"] += 1
+        return ("/fake/pkg.tar.gz", "1.2.3")
+
+    monkeypatch.setattr(dl_mod, "download_package", fake_download)
     monkeypatch.setattr(ext_mod, "extract_python_files", lambda _: ([], 0))
 
     result1 = scanner_mod.scan("mypkg", version="1.2.3")
     result2 = scanner_mod.scan("mypkg", version="1.2.3")
 
-    assert result1 is result2, "Cached result must be the identical object"
+    assert call_count["n"] == 1, "Second call must hit cache — download called only once"
+    assert result1.package_name == result2.package_name
+    assert result1.version == result2.version
 
 
 def test_cache_not_used_for_latest_version(monkeypatch):
@@ -110,14 +117,20 @@ def test_cache_is_case_insensitive_on_package_name(monkeypatch):
 
     scanner_mod.clear_cache()
 
-    monkeypatch.setattr(dl_mod, "download_package",
-                        lambda *a, **kw: ("/fake/pkg.tar.gz", "1.0.0"))
+    call_count = {"n": 0}
+
+    def counting_download(*a, **kw):
+        call_count["n"] += 1
+        return ("/fake/pkg.tar.gz", "1.0.0")
+
+    monkeypatch.setattr(dl_mod, "download_package", counting_download)
     monkeypatch.setattr(ext_mod, "extract_python_files", lambda _: ([], 0))
 
     result1 = scanner_mod.scan("MyPkg", version="1.0.0")
     result2 = scanner_mod.scan("mypkg", version="1.0.0")
 
-    assert result1 is result2, "Cache must be case-insensitive on package name"
+    assert call_count["n"] == 1, "Case-insensitive cache must avoid re-download"
+    assert result1.version == result2.version
 
 
 def test_scan_result_has_binary_files_found_field():

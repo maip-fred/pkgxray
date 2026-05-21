@@ -131,5 +131,5 @@ class ScanResult:
     files_analyzed: int
     summary: dict
     skipped_files: list = field(default_factory=list)
-    # Each entry: {"filename": str, "reason": "syntax_error" | "parse_error"}
+    # Each entry: {"filename": str, "reason": "syntax_error" | "parse_error" | "tomllib_unavailable"}
     binary_files_found: int = 0

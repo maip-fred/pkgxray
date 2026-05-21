@@ -1,6 +1,7 @@
 """Orquestador principal del escáner de pkgxray."""
 
 import ast
+import copy
 import logging
 import shutil
 import tempfile
@@ -150,13 +151,16 @@ def scan(package_name: str, version: Optional[str] = None) -> ScanResult:
         )
 
         # Cache pinned-version results for reuse within this session.
+        # Store a deep copy so callers that mutate the returned object (#14)
+        # don't corrupt future cache hits.
         if version is not None:
-            _SCAN_CACHE[(package_name.lower(), actual_version)] = result
+            cached = copy.deepcopy(result)
+            _SCAN_CACHE[(package_name.lower(), actual_version)] = cached
             # Also store under the user-supplied key in case it differs from the
             # resolved version (e.g. "2" → "2.32.3"), so repeated calls with the
             # same input string hit the cache correctly.
             if version != actual_version:
-                _SCAN_CACHE[(package_name.lower(), version)] = result
+                _SCAN_CACHE[(package_name.lower(), version)] = cached
 
         return result
 

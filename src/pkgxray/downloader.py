@@ -1,5 +1,6 @@
 """Descarga paquetes de PyPI sin instalarlos."""
 
+import hashlib
 import json
 import shutil
 import tempfile
@@ -62,7 +63,7 @@ def get_package_info(package_name: str, version: Optional[str] = None) -> dict:
         raise DownloadError(f"Error al parsear la respuesta de PyPI para '{package_name}': {e}") from e
 
 
-def find_best_distribution(package_info: dict) -> Tuple[str, str]:
+def find_best_distribution(package_info: dict) -> Tuple[str, str, Optional[str]]:
     """Selecciona el mejor archivo de distribución para descargar según los metadatos.
 
     Orden de preferencia: sdist (.tar.gz) > wheel multiplataforma > cualquier distribución.
@@ -71,28 +72,31 @@ def find_best_distribution(package_info: dict) -> Tuple[str, str]:
         package_info: Respuesta JSON de PyPI para el paquete.
 
     Returns:
-        Tupla (url_de_descarga, nombre_de_archivo).
+        Tupla (url_de_descarga, nombre_de_archivo, sha256_esperado_o_None).
 
     Raises:
         DownloadError: Si no se encuentra ninguna distribución adecuada.
     """
     urls = package_info.get("urls", [])
 
+    def _pick(entry: dict) -> Tuple[str, str, Optional[str]]:
+        sha256 = entry.get("digests", {}).get("sha256")
+        return entry["url"], entry["filename"], sha256
+
     # Prioridad 1: sdist (.tar.gz) — contiene setup.py
     for entry in urls:
         if entry.get("packagetype") == "sdist" or entry.get("filename", "").endswith(".tar.gz"):
-            return entry["url"], entry["filename"]
+            return _pick(entry)
 
     # Prioridad 2: wheel multiplataforma (any)
     for entry in urls:
         filename = entry.get("filename", "")
         if filename.endswith(".whl") and "any" in filename:
-            return entry["url"], entry["filename"]
+            return _pick(entry)
 
     # Prioridad 3: cualquier distribución disponible
     if urls:
-        entry = urls[0]
-        return entry["url"], entry["filename"]
+        return _pick(urls[0])
 
     raise DownloadError("No se encontró ninguna distribución adecuada para este paquete")
 
@@ -125,10 +129,29 @@ def download_package(
     try:
         package_info = get_package_info(package_name, version)
         actual_version = package_info["info"]["version"]
-        download_url, filename = find_best_distribution(package_info)
+        download_url, filename, expected_sha256 = find_best_distribution(package_info)
 
         output_file = dest_path / filename
-        urllib.request.urlretrieve(download_url, str(output_file))
+
+        # #16: download with timeout (urlretrieve has no timeout parameter)
+        req = urllib.request.Request(
+            download_url,
+            headers={"User-Agent": f"pkgxray/{_PKGXRAY_VERSION}"},
+        )
+        with urllib.request.urlopen(req, timeout=30) as response:
+            data = response.read()
+        output_file.write_bytes(data)
+
+        # #15: verify SHA-256 digest provided by PyPI
+        if expected_sha256:
+            actual_sha256 = hashlib.sha256(data).hexdigest()
+            if actual_sha256 != expected_sha256:
+                output_file.unlink(missing_ok=True)
+                raise DownloadError(
+                    f"SHA-256 mismatch para '{filename}': "
+                    f"esperado {expected_sha256}, obtenido {actual_sha256}"
+                )
+
         return output_file, actual_version
     except (PackageNotFoundError, DownloadError):
         raise

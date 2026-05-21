@@ -106,4 +106,23 @@ class DynamicImportAnalyzer(BaseAnalyzer):
                     analyzer_name=self.name,
                 ))
 
+            # ── importlib.util.spec_from_file_location(...) ──────────────────
+            # Loads an arbitrary file as a module — a known supply-chain technique (#11)
+            elif (isinstance(func, ast.Attribute) and
+                  func.attr == "spec_from_file_location" and
+                  isinstance(func.value, ast.Attribute) and
+                  func.value.attr == "util" and
+                  isinstance(func.value.value, ast.Name)):
+                canonical_receiver = aliases.get(func.value.value.id, func.value.value.id)
+                if canonical_receiver == "importlib":
+                    severity = Severity.CRITICAL if at_module else Severity.HIGH
+                    findings.append(Finding(
+                        severity=severity,
+                        description=f"Se detectó llamada a importlib.util.spec_from_file_location() — carga un archivo arbitrario como módulo{module_suffix}",
+                        filename=filename,
+                        line_number=line_num,
+                        code_snippet=snippet,
+                        analyzer_name=self.name,
+                    ))
+
         return findings

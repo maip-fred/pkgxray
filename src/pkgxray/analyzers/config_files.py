@@ -42,6 +42,10 @@ _PYTHON_EP_RE = re.compile(r'^[\w][\w.\-]*:[\w][\w.]*(\s*\[[\w,\s]*\])?$')
 _SCRIPT_FIELDS = {"scripts", "gui-scripts", "entry-points", "entry_points"}
 
 # Flag para emitir el warning de tomllib ausente solo una vez por sesión.
+# Intentionally never reset: the warning fires at most once per process lifetime.
+# Test isolation note: if a test triggers the warning, subsequent tests in the
+# same process will not see it even if they expect it.  Reset this flag in
+# test setUp/teardown when needed.
 _warned_no_tomllib = False
 
 

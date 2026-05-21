@@ -33,6 +33,7 @@ ANALYZER_CAPS = {
     "network":          8,  # HTTP calls — normal for HTTP libraries
     "dynamic_imports":  6,  # importlib — used in plugin systems
     "env_access":       5,  # env reads — ubiquitous in CLI tools
+    "config_files":    15,  # pyproject.toml/setup.cfg hooks — high-confidence attack vector
 }
 _DEFAULT_CAP = 10  # fallback for any analyzer not listed above
 
