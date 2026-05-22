@@ -347,3 +347,30 @@ def test_max_cache_entries_and_evict_count_exported():
     assert isinstance(MAX_CACHE_ENTRIES, int) and MAX_CACHE_ENTRIES > 0
     assert isinstance(EVICT_COUNT, int) and EVICT_COUNT > 0
     assert EVICT_COUNT < MAX_CACHE_ENTRIES
+
+def test_deserialize_drops_finding_with_unknown_severity():
+    """A cached finding with an unrecognised severity must be skipped silently."""
+    import json
+    from pkgxray._disk_cache import get_cache_dir, read, _CACHE_VERSION
+
+    sha = "e" * 64
+    cache_dir = get_cache_dir()
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_file = cache_dir / f"{sha}.json"
+    cache_file.write_text(json.dumps({
+        "version": _CACHE_VERSION,
+        "package_name": "test", "version_str": "1.0",
+        "scan_date": "2026-01-01T00:00:00+00:00",
+        "risk_score": 0, "risk_level": "LOW",
+        "files_analyzed": 0, "binary_files_found": 0,
+        "summary": {}, "skipped_files": [],
+        "findings": [{"analyzer_name": "x", "severity": "BOGUS",
+                      "description": "d", "filename": "f",
+                      "line_number": 1, "code_snippet": ""}],
+    }))
+    try:
+        result = read(sha)
+        assert result is not None        # no crash
+        assert result.findings == []     # bad finding dropped
+    finally:
+        cache_file.unlink(missing_ok=True)

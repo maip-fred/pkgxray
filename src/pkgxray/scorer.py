@@ -56,6 +56,9 @@ DANGEROUS_COMBOS = {
     frozenset({"network", "subprocess"}): 10,        # download + execute
     frozenset({"obfuscation", "code_exec"}): 20,     # obfuscated payload
     frozenset({"setup_scripts", "subprocess"}): 10,  # install hook + shell commands
+    frozenset({"process_spawn", "env_access"}): 15,  # credential access + process spawn
+    frozenset({"process_spawn", "network"}): 10,      # network + process spawn (download+exec)
+
 }
 
 # Per-combo minimum severity overrides.  Combos not listed here use _COMBO_DEFAULT_MIN.

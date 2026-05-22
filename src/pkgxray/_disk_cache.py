@@ -112,7 +112,7 @@ def _evict_if_needed(cache_dir: Path) -> int:
     except Exception:
         return 0
 
-    if len(files) < MAX_CACHE_ENTRIES:
+    if len(files) <= MAX_CACHE_ENTRIES:
         return 0
 
     try:
