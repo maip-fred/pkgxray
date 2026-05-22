@@ -2,7 +2,7 @@
 
 Every building block (quantum) of pkgxray: what it is, what it does, its current state, and what needs attention.
 
-**Version:** 0.3.0-dev (P1 + P2 complete)
+**Version:** 0.3.x-dev (P1 + P2 + P3 + P4 complete, new analyzers: config_files, process_spawn)
 
 ---
 
@@ -18,7 +18,7 @@ scanner.scan()              <- single public entry-point
     |       |
     |       +-> extractor    <- opens .tar.gz / .whl; yields ExtractedFile objects
     |               |
-    |               +-> analyzers (x8)   <- AST-based detection per file
+    |               +-> analyzers (x10)  <- AST/TOML/INI detection per file
     |                       |
     |                       +-> scorer   <- weights + caps -> risk_score 0-100
     |
@@ -42,9 +42,9 @@ scanner.scan()              <- single public entry-point
 
 **Raises:** `PackageNotFoundError`, `DownloadError`
 
-**✅ [P4-04]:** Los fallos individuales de analizadores ahora emiten `logger.warning(...)` en lugar de silenciarse completamente. Usuarios pueden activar logs con `logging.basicConfig(level=logging.DEBUG)` o con el flag `--verbose` de la CLI.
+**✅ [P4-04]:** Individual analyser failures now emit `logger.warning(...)` instead of being silently swallowed. Enable with `logging.basicConfig(level=logging.DEBUG)` (API) or `--verbose` (CLI).
 
-**Status:** ✅ Logging añadido (P4-04). No hay otros problemas de correctitud conocidos.
+**Status:** ✅ Logging added (P4-04). No other known correctness issues.
 
 ---
 
@@ -95,20 +95,47 @@ scanner.scan()              <- single public entry-point
 | HIGH     | 7      |
 | CRITICAL | 15     |
 
-Two-level capping:
-1. **Per-analyser cap: 20 points** — prevents a single analyser from dominating the score
-2. **Global cap: 100 points**
+Two-level capping plus combo bonuses:
+1. **Per-analyser caps (heterogeneous)** — each analyser has its own ceiling based on false-positive risk
+2. **Combo bonuses** — extra points when multiple high-risk categories appear together
+3. **Global cap: 100 points**
 
-**Risk level thresholds:**
+**Per-analyser caps (current):**
+
+| Analyser | Cap |
+|---|---|
+| `obfuscation` | 20 |
+| `setup_scripts` | 20 |
+| `code_exec` | 15 |
+| `config_files` | 15 |
+| `subprocess` | 12 |
+| `filesystem` | 12 |
+| `process_spawn` | 12 |
+| `network` | 8 |
+| `dynamic_imports` | 6 |
+| `env_access` | 5 |
+
+**Risk level thresholds (v0.3.0):**
 
 | Score   | Level    |
 |---------|----------|
-| 0–20    | LOW      |
-| 21–40   | MODERATE |
-| 41–70   | HIGH     |
-| 71–100  | CRITICAL |
+| 0–15    | LOW      |
+| 16–35   | MODERATE |
+| 36–60   | HIGH     |
+| 61–100  | CRITICAL |
 
-**✅ Recalibrated (P3-02):** Per-analyser caps are now heterogeneous (env_access=5, network=8, obfuscation=20, etc.) and combo bonuses fire for dangerous pattern combinations (env_access+network, obfuscation+code_exec, etc.). Known-clean packages now score LOW/MODERATE.
+**Combo bonuses (active):**
+
+| Combo | Bonus | Min severity gate |
+|---|---|---|
+| `env_access` + `network` | +25 | CRITICAL (both) |
+| `obfuscation` + `code_exec` | +20 | HIGH (both) |
+| `process_spawn` + `env_access` | +15 | HIGH (both) |
+| `network` + `subprocess` | +10 | HIGH (both) |
+| `setup_scripts` + `subprocess` | +10 | HIGH (both) |
+| `process_spawn` + `network` | +10 | HIGH (both) |
+
+**✅ Recalibrated (P3-02):** Per-analyser caps are heterogeneous and combo bonuses fire for dangerous pattern combinations. Known-clean packages now score LOW/MODERATE.
 
 **Status:** ✅ Recalibrated (P3-02). Scores validated with integration tests (P3-03).
 
@@ -131,14 +158,14 @@ Two-level capping:
 
 **What it does:** Exposes `pkgxray scan <package>` via `click`. Supports `--version`, `--format`, `--output` flags.
 
-**✅ [P4-01]:** Nuevo flag `--fail-above N` — sale con código 1 si `risk_score >= N`, útil en pipelines CI/CD.
+**✅ [P4-01]:** New flag `--fail-above N` — exits with code 1 if `risk_score >= N`, useful in CI/CD pipelines.
 
-**✅ [P4-04]:** Nuevo flag `--verbose` — activa `logging.DEBUG` para ver warnings de analizadores y pasos del pipeline.
+**✅ [P4-04]:** New flag `--verbose` — enables `logging.DEBUG` to surface analyser warnings and pipeline steps.
 
 **Known issues:**
-- `@click.version_option(version="0.1.0")` es stale — muestra `0.1.0` (pendiente P5-01).
+- `@click.version_option(version="0.1.0")` is stale — shows `0.1.0` (pending P5-01).
 
-**Status:** ✅ --fail-above (P4-01) y --verbose (P4-04) implementados. Version string fix pendiente P5-01.
+**Status:** ✅ --fail-above (P4-01) and --verbose (P4-04) implemented. Version string fix pending P5-01.
 
 ---
 
@@ -266,6 +293,46 @@ Defines `Severity`, `Finding`, `ExtractedFile`, `ScanResult`, `BaseAnalyzer`, `b
 
 ---
 
+### `config_files.py` — Package Configuration Files
+
+**Detects (in `pyproject.toml` and `setup.cfg` only):**
+- Suspicious build dependencies in `[build-system].requires` (network/cloud packages) → HIGH
+- Shell commands embedded in entrypoints (`scripts`, `gui-scripts`, `entry-points`) → CRITICAL
+- Post-install hooks defined in `[tool.*].hooks` → MEDIUM
+
+**Parser:** Uses `tomllib` (Python ≥ 3.11 stdlib) or `tomli` (fallback) for TOML; `configparser` for INI.
+
+**False-positive guards:**
+- Legitimate `module:function` entrypoints are filtered via `_PYTHON_EP_RE` before keyword matching.
+- Short shell keywords (`sh`, `nc`) require whole-word boundary matching.
+- If `tomllib`/`tomli` is unavailable, the file is recorded in `skipped_files` with reason `"tomllib_unavailable"`.
+
+**Does NOT detect:**
+- Arbitrary Python code inline in `pyproject.toml` (not valid TOML).
+- Build backends that execute shell commands through their own plugin hooks beyond `[tool.*].hooks`.
+
+**Status:** ✅ New analyser (v0.3.x). See ADR-009.
+
+---
+
+### `process_spawn.py` — Process/Thread Spawn with Dangerous Callable
+
+**Detects:**
+- `multiprocessing.Process(target=os.system, ...)` / `threading.Thread(target=subprocess.run, ...)` → HIGH/CRITICAL
+- `executor.submit(os.system, ...)` / `executor.map(subprocess.Popen, ...)` → HIGH/CRITICAL
+
+**Why this matters:** Passing a dangerous function as a *reference* to a thread/process launcher evades `SubprocessAnalyzer` and `CodeExecAnalyzer`, which look for direct calls only.
+
+**Alias resolution:** Uses `collect_import_aliases()` to resolve module aliases (e.g. `import os as o; Thread(target=o.system, ...)`).
+
+**Does NOT detect:**
+- Lambda wrappers: `Thread(target=lambda: os.system("cmd"))`
+- Indirect references: `fn = os.system; Thread(target=fn)`
+
+**Status:** ✅ New analyser (v0.3.x). See ADR-010.
+
+---
+
 ### `dynamic_imports.py` — Dynamic Imports
 
 **Detects:** `__import__(...)`, `importlib.import_module(...)`.
@@ -295,6 +362,8 @@ Defines `Severity`, `Finding`, `ExtractedFile`, `ScanResult`, `BaseAnalyzer`, `b
 | ~~HIGH~~ | ~~`network.py`~~ | ~~Chained attribute HTTP calls missed (`self.session.get(...)`)~~ | ✅ Fixed P2-02 |
 | ~~MEDIUM~~ | ~~`base.py`~~ | ~~Class-body code not classified as module-level~~ | ✅ Fixed P2-04 |
 | MEDIUM | `subprocess_calls.py` | Aliased module imports bypassed (`import subprocess as sp`) | Out of scope v0.3 |
+| MEDIUM | `process_spawn.py` | Lambda wrappers not detected (`Thread(target=lambda: os.system(...))`) | Out of scope v0.3 |
+| MEDIUM | `config_files.py` | Requires `tomli` on Python < 3.11; files skipped if unavailable | Documented in `skipped_files` |
 | LOW | `cli.py` | `--version` shows `0.1.0` instead of current version | Pending P5-01 |
 | LOW | `downloader.py` | `User-Agent` header shows `0.1.0` | Pending P5-01 |
 | LOW | `extractor.py` | `ExtractedFile.is_setup` field set but never consumed | Pending P5-02 |

