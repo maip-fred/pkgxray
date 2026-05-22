@@ -121,3 +121,65 @@ def test_detects_variable_alias_eval():
     code = 'def run_code():\n    run = eval\n    run(user_input)'
     findings = analyzer.analyze(code, 'test.py')
     assert len(findings) >= 1, "Variable alias of eval must be detected"
+
+
+# ── Finding #3: indirect __builtins__ access ──────────────────────────────────
+
+def test_builtins_subscript_exec_detected():
+    """__builtins__['exec']('payload') must be detected."""
+    from pkgxray.analyzers.code_exec import CodeExecAnalyzer
+    from pkgxray.analyzers.base import Severity
+    code = '__builtins__["exec"]("import os")\n'
+    findings = CodeExecAnalyzer().analyze(code, "test.py")
+    assert len(findings) >= 1
+    assert any(f.severity == Severity.CRITICAL for f in findings)
+
+
+def test_vars_subscript_exec_detected():
+    """vars()['exec']('payload') must be detected."""
+    from pkgxray.analyzers.code_exec import CodeExecAnalyzer
+    code = 'vars()["exec"]("import os")\n'
+    findings = CodeExecAnalyzer().analyze(code, "test.py")
+    assert len(findings) >= 1
+
+
+def test_globals_subscript_eval_detected():
+    """globals()['eval']('payload') must be detected."""
+    from pkgxray.analyzers.code_exec import CodeExecAnalyzer
+    code = 'globals()["eval"]("1+1")\n'
+    findings = CodeExecAnalyzer().analyze(code, "test.py")
+    assert len(findings) >= 1
+
+
+def test_getattr_builtins_exec_detected():
+    """getattr(__builtins__, 'exec')('payload') must be detected."""
+    from pkgxray.analyzers.code_exec import CodeExecAnalyzer
+    from pkgxray.analyzers.base import Severity
+    code = 'getattr(__builtins__, "exec")("import os")\n'
+    findings = CodeExecAnalyzer().analyze(code, "test.py")
+    assert len(findings) >= 1
+    assert any(f.severity == Severity.CRITICAL for f in findings)
+
+
+def test_getattr_builtins_module_exec_detected():
+    """getattr(builtins, 'exec')('payload') must be detected."""
+    from pkgxray.analyzers.code_exec import CodeExecAnalyzer
+    code = "import builtins\ngetattr(builtins, 'exec')('import os')\n"
+    findings = CodeExecAnalyzer().analyze(code, "test.py")
+    assert len(findings) >= 1
+
+
+def test_unrelated_dict_subscript_call_not_flagged():
+    """my_dict['exec'](...) where my_dict is not __builtins__ must NOT be flagged."""
+    from pkgxray.analyzers.code_exec import CodeExecAnalyzer
+    code = 'commands = {"exec": lambda x: x}\ncommands["exec"]("harmless")\n'
+    findings = CodeExecAnalyzer().analyze(code, "test.py")
+    assert findings == [], f"Unexpected findings: {findings}"
+
+
+def test_getattr_non_builtins_not_flagged():
+    """getattr(os, 'system')('id') must NOT be flagged by code_exec (handled by subprocess)."""
+    from pkgxray.analyzers.code_exec import CodeExecAnalyzer
+    code = "import os\ngetattr(os, 'system')('id')\n"
+    findings = CodeExecAnalyzer().analyze(code, "test.py")
+    assert findings == []
