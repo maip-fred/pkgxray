@@ -169,3 +169,20 @@ def test_aliased_os_environ_get_detected():
     code = "import os as o\nval = o.environ.get('AWS_ACCESS_KEY')\n"
     findings = analyzer.analyze(code, "test.py")
     assert len(findings) >= 1, "Aliased os.environ.get must be detected"
+
+def test_dynamic_env_key_in_environ_subscript_flagged_medium():
+    """os.environ[variable] with a dynamic key must produce a MEDIUM finding."""
+    from pkgxray.analyzers.env_access import EnvAccessAnalyzer
+    from pkgxray.analyzers.base import Severity
+    code = "import os\ndef fn():\n    key = some_var\n    val = os.environ[key]\n"
+    findings = EnvAccessAnalyzer().analyze(code, "test.py")
+    assert any(f.severity == Severity.MEDIUM for f in findings)
+
+
+def test_dynamic_env_key_in_getenv_flagged_medium():
+    """os.getenv(variable) with a dynamic key must produce a MEDIUM finding."""
+    from pkgxray.analyzers.env_access import EnvAccessAnalyzer
+    from pkgxray.analyzers.base import Severity
+    code = "import os\ndef fn():\n    val = os.getenv(some_dynamic_key)\n"
+    findings = EnvAccessAnalyzer().analyze(code, "test.py")
+    assert any(f.severity == Severity.MEDIUM for f in findings)

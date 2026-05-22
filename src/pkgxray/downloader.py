@@ -27,13 +27,28 @@ class DownloadError(Exception):
 _DEFAULT_REGISTRY = "https://pypi.org"
 
 
-def _resolve_registry(registry_url: Optional[str]) -> str:
-    """Return the registry base URL: explicit arg > env var > default PyPI."""
-    if registry_url:
-        return registry_url.rstrip("/")
-    env = os.environ.get("PKGXRAY_INDEX_URL", "")
-    return env.rstrip("/") if env else _DEFAULT_REGISTRY
+_ALLOWED_SCHEMES = ("https://", "http://")
 
+
+def _resolve_registry(registry_url: Optional[str]) -> str:
+    """Return the registry base URL: explicit arg > env var > default PyPI.
+
+    Raises:
+        ValueError: If the resolved URL does not start with http:// or https://.
+                    This prevents file://, ftp://, and SSRF to cloud-metadata endpoints.
+    """
+    if registry_url:
+        url = registry_url.rstrip("/")
+    else:
+        env = os.environ.get("PKGXRAY_INDEX_URL", "")
+        url = env.rstrip("/") if env else _DEFAULT_REGISTRY
+
+    if url != _DEFAULT_REGISTRY and not any(url.startswith(s) for s in _ALLOWED_SCHEMES):
+        raise ValueError(
+            f"URL de registro no permitida: '{url}'. "
+            f"Solo se permiten los esquemas: {', '.join(_ALLOWED_SCHEMES)}"
+        )
+    return url
 
 def get_package_info(
     package_name: str,

@@ -10,6 +10,45 @@ from pkgxray.downloader import (
     DownloadError,
 )
 
+from unittest.mock import MagicMock, patch
+
+
+def test_download_file_raises_on_sha256_mismatch(tmp_path):
+    """download_file() must raise DownloadError when the SHA-256 does not match."""
+    from pkgxray.downloader import download_file, DownloadError
+
+    # Return content whose SHA-256 will NOT match the expected value
+    mock_response = MagicMock()
+    mock_response.read.return_value = b"legitimate content"
+    mock_response.__enter__ = lambda s: s
+    mock_response.__exit__ = MagicMock(return_value=False)
+
+    wrong_sha256 = "0" * 64   # correct format but wrong digest
+
+    with patch("urllib.request.urlopen", return_value=mock_response):
+        try:
+            download_file("https://fake.url/pkg.tar.gz", wrong_sha256, "pkg.tar.gz", str(tmp_path))
+            assert False, "Expected DownloadError"
+        except DownloadError as e:
+            assert "SHA-256" in str(e) or "mismatch" in str(e).lower()
+
+
+def test_download_file_succeeds_when_sha256_matches(tmp_path):
+    """download_file() must succeed when SHA-256 matches."""
+    import hashlib
+    from pkgxray.downloader import download_file
+
+    content = b"package content"
+    correct_sha256 = hashlib.sha256(content).hexdigest()
+
+    mock_response = MagicMock()
+    mock_response.read.return_value = content
+    mock_response.__enter__ = lambda s: s
+    mock_response.__exit__ = MagicMock(return_value=False)
+
+    with patch("urllib.request.urlopen", return_value=mock_response):
+        path = download_file("https://fake.url/pkg.tar.gz", correct_sha256, "pkg.tar.gz", str(tmp_path))
+    assert path.exists()
 
 def test_get_package_info_valid():
     """Test fetching metadata for a known package."""

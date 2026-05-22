@@ -349,3 +349,20 @@ def test_find_line_returns_zero_when_not_found():
 
     content = "[build-system]\nrequires = [\"hatchling\"]\n"
     assert _find_line(content, "requests") == 0
+
+def test_check_pyproject_malformed_toml_returns_empty():
+    """A pyproject.toml that fails to parse must return [] without raising."""
+    from pkgxray.analyzers.config_files import ConfigFileAnalyzer
+    analyzer = ConfigFileAnalyzer()
+    malformed = "this is not valid toml [[[["
+    findings = analyzer.analyze(malformed, "pyproject.toml")
+    assert findings == []
+
+
+def test_check_setup_cfg_malformed_ini_returns_empty():
+    """A setup.cfg that fails to parse must return [] without raising."""
+    from pkgxray.analyzers.config_files import ConfigFileAnalyzer
+    analyzer = ConfigFileAnalyzer()
+    malformed = "\x00\x01\x02 invalid bytes"
+    findings = analyzer.analyze(malformed, "setup.cfg")
+    assert findings == []

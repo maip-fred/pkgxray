@@ -31,10 +31,17 @@ _OS_ATTRS = {
     "spawnve": Severity.CRITICAL,
     "spawnvp": Severity.CRITICAL,
     "spawnvpe": Severity.CRITICAL,
+    "startfile": Severity.HIGH, 
 }
 
 # #3: pty.spawn() opens an interactive shell
 _PTY_ATTRS = {"spawn": Severity.CRITICAL}
+
+# #1: asyncio async subprocess API — equivalent to subprocess.run/Popen
+_ASYNCIO_SUBPROCESS_ATTRS = {
+    "create_subprocess_shell": Severity.CRITICAL,   # shell=True equivalent
+    "create_subprocess_exec":  Severity.HIGH,        # exec without shell
+}
 
 
 class SubprocessAnalyzer(BaseAnalyzer):
@@ -116,6 +123,19 @@ class SubprocessAnalyzer(BaseAnalyzer):
                     findings.append(Finding(
                         severity=severity,
                         description=f"Se detectó llamada a pty.{func.attr}() — abre una shell interactiva{suffix}",
+                        filename=filename,
+                        line_number=line_num,
+                        code_snippet=snippet,
+                        analyzer_name=self.name,
+                    ))
+                # asyncio.create_subprocess_shell / create_subprocess_exec (#1)
+                elif canonical == "asyncio" and func.attr in _ASYNCIO_SUBPROCESS_ATTRS:
+                    base_severity = _ASYNCIO_SUBPROCESS_ATTRS[func.attr]
+                    severity = Severity.CRITICAL if at_module else base_severity
+                    suffix = " — ejecutado al nivel del módulo, corre al importar" if at_module else ""
+                    findings.append(Finding(
+                        severity=severity,
+                        description=f"Se detectó llamada a asyncio.{func.attr}() — ejecuta comandos del sistema de forma asíncrona{suffix}",
                         filename=filename,
                         line_number=line_num,
                         code_snippet=snippet,

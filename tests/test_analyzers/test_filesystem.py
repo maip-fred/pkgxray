@@ -152,3 +152,11 @@ def test_detects_bash_profile():
     analyzer = FilesystemAnalyzer()
     findings = analyzer.analyze('path = "~/.bash_profile"', 'test.py')
     assert any(f.severity == Severity.HIGH for f in findings)
+
+def test_path_instance_unlink_detected():
+    """Path('f').unlink() must be detected — receiver is a Path() call."""
+    from pkgxray.analyzers.filesystem import FilesystemAnalyzer
+    from pkgxray.analyzers.base import Severity
+    code = "from pathlib import Path\nPath('/tmp/secret').unlink()\n"
+    findings = FilesystemAnalyzer().analyze(code, "test.py")
+    assert len(findings) >= 1
