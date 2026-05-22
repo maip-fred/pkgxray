@@ -9,7 +9,43 @@ import pytest
 from pkgxray import _disk_cache
 from pkgxray.analyzers.base import Finding, ScanResult, Severity
 
+import os, stat
+from unittest.mock import patch
 
+
+def test_get_cache_dir_uses_xdg_cache_home(tmp_path):
+    """XDG_CACHE_HOME env var must be used when set."""
+    from pkgxray._disk_cache import get_cache_dir
+    with patch.dict(os.environ, {"XDG_CACHE_HOME": str(tmp_path)}):
+        result = get_cache_dir()
+    assert result == tmp_path / "pkgxray"
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows-only: Path() raises on Linux when os.name is patched to 'nt'")
+def test_get_cache_dir_uses_localappdata_on_windows(tmp_path):
+    """LOCALAPPDATA env var must be used when os.name == 'nt'."""
+    from pkgxray._disk_cache import get_cache_dir
+    with patch("os.name", "nt"), \
+         patch.dict(os.environ, {"LOCALAPPDATA": str(tmp_path)}):
+        result = get_cache_dir()
+    assert result == tmp_path / "pkgxray" / "cache"
+
+
+def test_clear_silently_skips_undeletable_files(tmp_path):
+    """clear() must not raise when a cache file cannot be deleted."""
+    from pkgxray._disk_cache import clear, get_cache_dir
+    with patch("pkgxray._disk_cache.get_cache_dir", return_value=tmp_path):
+        cache_file = tmp_path / ("a" * 64 + ".json")
+        cache_file.write_text("{}")
+        # Make it unreadable/undeletable (Linux only)
+        if os.name != "nt":
+            cache_file.chmod(0o000)
+            try:
+                count = clear()   # must not raise
+                assert isinstance(count, int)
+            finally:
+                if cache_file.exists():
+                    cache_file.chmod(0o644)
 def _make_result(
     package_name="mypkg",
     version="1.0.0",
@@ -213,3 +249,101 @@ def test_scan_reads_from_disk_cache(isolated_cache, monkeypatch):
 
     result = scanner_mod.scan("mypkg", version="3.0.0")
     assert result.risk_score == 7
+
+def test_read_rejects_invalid_sha256():
+    """read() must return None for any non-SHA-256 key without touching the filesystem."""
+    from pkgxray._disk_cache import read
+    assert read("../evil") is None
+    assert read("not_a_sha") is None
+    assert read("") is None
+    assert read("A" * 64) is None   # uppercase not accepted
+
+
+def test_write_rejects_invalid_sha256(tmp_path):
+    """write() must silently refuse to write for a malformed SHA-256 key."""
+    from pkgxray._disk_cache import write
+    from pkgxray import ScanResult
+    from datetime import datetime, timezone
+    from unittest.mock import patch
+
+    r = ScanResult("pkg", "1.0", datetime.now(timezone.utc).isoformat(), [], 0, "LOW", 0,
+                   {"low": 0, "medium": 0, "high": 0, "critical": 0, "total": 0})
+    with patch("pkgxray._disk_cache.get_cache_dir", return_value=tmp_path):
+        write("../../etc/evil", r)   # must not write anything
+    assert not any(tmp_path.iterdir())   # tmp_path must remain empty
+
+
+# ── Finding #9: disk cache size limit ────────────────────────────────────────
+
+def test_evict_if_needed_no_op_under_limit(tmp_path):
+    """_evict_if_needed must delete nothing when count <= MAX_CACHE_ENTRIES."""
+    from pkgxray._disk_cache import _evict_if_needed, MAX_CACHE_ENTRIES
+    from unittest.mock import patch
+
+    with patch("pkgxray._disk_cache.get_cache_dir", return_value=tmp_path):
+        # Create fewer files than the limit
+        for i in range(min(5, MAX_CACHE_ENTRIES - 1)):
+            (tmp_path / f"{'a' * 63}{i}.json").write_text("{}")
+        evicted = _evict_if_needed(tmp_path)
+
+    assert evicted == 0
+
+
+def test_evict_if_needed_removes_oldest_when_over_limit(tmp_path):
+    """_evict_if_needed must delete EVICT_COUNT oldest files when over MAX_CACHE_ENTRIES."""
+    import time
+    from pkgxray._disk_cache import _evict_if_needed, MAX_CACHE_ENTRIES, EVICT_COUNT
+
+    # Create MAX_CACHE_ENTRIES + 1 files with distinct mtimes
+    files = []
+    for i in range(MAX_CACHE_ENTRIES + 1):
+        f = tmp_path / f"{'a' * 62}{i:02d}.json"
+        f.write_text("{}")
+        # Stagger mtimes so oldest-first sort is deterministic
+        os.utime(f, (i, i))
+        files.append(f)
+
+    evicted = _evict_if_needed(tmp_path)
+
+    assert evicted == EVICT_COUNT
+    remaining = list(tmp_path.glob("*.json"))
+    assert len(remaining) == MAX_CACHE_ENTRIES + 1 - EVICT_COUNT
+    # The oldest files (mtime 0..EVICT_COUNT-1) must be gone
+    for f in files[:EVICT_COUNT]:
+        assert not f.exists(), f"{f.name} should have been evicted"
+
+
+def test_write_triggers_eviction_when_over_limit(tmp_path):
+    """write() must evict old entries when the cache exceeds MAX_CACHE_ENTRIES."""
+    import time
+    from pkgxray._disk_cache import write, MAX_CACHE_ENTRIES, EVICT_COUNT
+    from unittest.mock import patch
+
+    with patch("pkgxray._disk_cache.get_cache_dir", return_value=tmp_path):
+        # Pre-populate with MAX_CACHE_ENTRIES existing entries
+        for i in range(MAX_CACHE_ENTRIES):
+            f = tmp_path / f"{'b' * 62}{i:02d}.json"
+            f.write_text(json.dumps({"version": 1}))
+            os.utime(f, (i, i))
+
+        before_count = len(list(tmp_path.glob("*.json")))
+        assert before_count == MAX_CACHE_ENTRIES
+
+        # Write one more — should trigger eviction
+        result = _make_result()
+        write("c" * 64, result)
+
+        after_count = len(list(tmp_path.glob("*.json")))
+        # After eviction + new write: MAX - EVICT_COUNT + 1
+        expected = MAX_CACHE_ENTRIES - EVICT_COUNT + 1
+        assert after_count == expected, (
+            f"Expected {expected} files after eviction, got {after_count}"
+        )
+
+
+def test_max_cache_entries_and_evict_count_exported():
+    """MAX_CACHE_ENTRIES and EVICT_COUNT must be importable from top-level pkgxray."""
+    from pkgxray import MAX_CACHE_ENTRIES, EVICT_COUNT
+    assert isinstance(MAX_CACHE_ENTRIES, int) and MAX_CACHE_ENTRIES > 0
+    assert isinstance(EVICT_COUNT, int) and EVICT_COUNT > 0
+    assert EVICT_COUNT < MAX_CACHE_ENTRIES

@@ -2,7 +2,7 @@
 
 from pkgxray.scanner import scan, clear_cache
 from pkgxray.analyzers.base import ScanResult, Finding, Severity
-from pkgxray._disk_cache import clear as clear_disk_cache
+from pkgxray._disk_cache import clear as clear_disk_cache, MAX_CACHE_ENTRIES, EVICT_COUNT
 
 __version__ = "0.3.0"
 __all__ = [
@@ -13,4 +13,6 @@ __all__ = [
     "Finding",
     "Severity",
     "__version__",
+    "MAX_CACHE_ENTRIES",
+    "EVICT_COUNT",
 ]
