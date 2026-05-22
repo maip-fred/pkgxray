@@ -34,6 +34,7 @@ ANALYZER_CAPS = {
     "dynamic_imports":  6,  # importlib — used in plugin systems
     "env_access":       5,  # env reads — ubiquitous in CLI tools
     "config_files":    15,  # pyproject.toml/setup.cfg hooks — high-confidence attack vector
+    "process_spawn":   12,  # Process/Thread with dangerous target — high confidence
 }
 _DEFAULT_CAP = 10  # fallback for any analyzer not listed above
 

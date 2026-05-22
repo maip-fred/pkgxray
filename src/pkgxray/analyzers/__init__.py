@@ -10,6 +10,7 @@ from pkgxray.analyzers.obfuscation import ObfuscationAnalyzer
 from pkgxray.analyzers.setup_scripts import SetupScriptAnalyzer
 from pkgxray.analyzers.dynamic_imports import DynamicImportAnalyzer
 from pkgxray.analyzers.config_files import ConfigFileAnalyzer
+from pkgxray.analyzers.process_spawn import ProcessSpawnAnalyzer
 
 
 def get_all_analyzers() -> list:
@@ -24,6 +25,7 @@ def get_all_analyzers() -> list:
         SetupScriptAnalyzer(),
         DynamicImportAnalyzer(),
         ConfigFileAnalyzer(),
+        ProcessSpawnAnalyzer(),    # ADD — detects dangerous Process/Thread targets
     ]
 
 
@@ -42,5 +44,6 @@ __all__ = [
     "SetupScriptAnalyzer",
     "DynamicImportAnalyzer",
     "ConfigFileAnalyzer",
+    "ProcessSpawnAnalyzer",
     "get_all_analyzers",
 ]
