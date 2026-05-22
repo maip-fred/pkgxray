@@ -111,7 +111,7 @@ class SubprocessAnalyzer(BaseAnalyzer):
 
                 # pty.spawn() — opens an interactive shell (#3)
                 elif canonical == "pty" and func.attr in _PTY_ATTRS:
-                    severity = Severity.CRITICAL
+                    severity = Severity.CRITICAL if at_module else Severity.HIGH
                     suffix = " — ejecutado al nivel del módulo, corre al importar" if at_module else ""
                     findings.append(Finding(
                         severity=severity,

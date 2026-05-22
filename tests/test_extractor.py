@@ -245,3 +245,55 @@ def test_unsupported_format_raises():
         bad.unlink()
     finally:
         archive.unlink()
+
+
+# ── Phase 8 D2 tests ─────────────────────────────────────────────────────────
+
+def test_extract_skips_oversized_files(tmp_path):
+    """Files larger than MAX_FILE_SIZE must be silently skipped."""
+    import tarfile, io
+    from pkgxray.extractor import extract_python_files, MAX_FILE_SIZE
+    archive = tmp_path / "pkg.tar.gz"
+    with tarfile.open(archive, "w:gz") as tf:
+        big_content = b"x = 1\n" * (MAX_FILE_SIZE // 6 + 1)
+        info = tarfile.TarInfo(name="bigfile.py")
+        info.size = len(big_content)
+        tf.addfile(info, io.BytesIO(big_content))
+    files, _ = extract_python_files(archive)
+    assert files == [], "Oversized files must be silently skipped"
+
+
+def test_extract_handles_bad_tarfile_gracefully(tmp_path):
+    """A corrupt .tar.gz must not raise — extractor must return empty list."""
+    from pkgxray.extractor import extract_python_files
+    archive = tmp_path / "corrupt.tar.gz"
+    archive.write_bytes(b"this is not a valid tar.gz file")
+    files, binary_count = extract_python_files(archive)
+    assert files == []
+    assert binary_count == 0
+
+
+def test_extract_handles_bad_zip_gracefully(tmp_path):
+    """A corrupt .whl must not raise — extractor must return empty list."""
+    from pkgxray.extractor import extract_python_files
+    archive = tmp_path / "corrupt.whl"
+    archive.write_bytes(b"this is not a valid zip")
+    files, binary_count = extract_python_files(archive)
+    assert files == []
+    assert binary_count == 0
+
+
+def test_is_config_file_recognises_pyproject_and_setup_cfg():
+    """_is_config_file must return True for pyproject.toml and setup.cfg."""
+    from pkgxray.extractor import _is_config_file
+    assert _is_config_file("mypackage/pyproject.toml")
+    assert _is_config_file("setup.cfg")
+    assert not _is_config_file("setup.py")
+    assert not _is_config_file("mypackage/utils.py")
+
+
+def test_is_setup_file_only_matches_setup_py():
+    """_is_setup_file must return True for setup.py, not for setup.cfg."""
+    from pkgxray.extractor import _is_setup_file
+    assert _is_setup_file("setup.py")
+    assert not _is_setup_file("setup.cfg")

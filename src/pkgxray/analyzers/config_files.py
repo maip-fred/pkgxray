@@ -49,6 +49,12 @@ _SCRIPT_FIELDS = {"scripts", "gui-scripts", "entry-points", "entry_points"}
 _warned_no_tomllib = False
 
 
+def _reset_tomllib_warning() -> None:
+    """Resets the 'tomllib unavailable' warning flag. For use in tests only."""
+    global _warned_no_tomllib
+    _warned_no_tomllib = False
+
+
 def _find_line(content: str, *search_strings: str) -> int:
     """Returns the line number (1-based) of the first non-comment line that
     contains any of the search strings.

@@ -5,6 +5,7 @@ import copy
 import logging
 import shutil
 import tempfile
+import threading
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -22,15 +23,13 @@ from pkgxray.downloader import DownloadError, PackageNotFoundError
 # Only populated when an explicit version is requested.  "latest" scans are never
 # cached because the package contents may change between calls.
 _SCAN_CACHE: dict = {}
+_SCAN_CACHE_LOCK = threading.Lock()
 
 
 def clear_cache() -> None:
-    """Clears the in-session scan cache.
-
-    Call this in tests or when you need fresh results for a version you have
-    already scanned in the same Python session.
-    """
-    _SCAN_CACHE.clear()
+    """Clears the in-session scan cache (thread-safe)."""
+    with _SCAN_CACHE_LOCK:
+        _SCAN_CACHE.clear()
 
 
 def scan(
@@ -59,9 +58,10 @@ def scan(
     # Paso 1: Session cache lookup (only for pinned versions).
     if version is not None:
         cache_key = (package_name.lower(), version)
-        if cache_key in _SCAN_CACHE:
-            logger.debug("Session cache hit for %s==%s", package_name, version)
-            return _SCAN_CACHE[cache_key]
+        with _SCAN_CACHE_LOCK:
+            if cache_key in _SCAN_CACHE:
+                logger.debug("Session cache hit for %s==%s", package_name, version)
+                return _SCAN_CACHE[cache_key]
 
     # Paso 2: Fetch package metadata and select distribution.
     info = downloader.get_package_info(package_name, version, registry_url=registry_url)
@@ -183,12 +183,13 @@ def scan(
         # don't corrupt future cache hits.
         if version is not None:
             cached = copy.deepcopy(result)
-            _SCAN_CACHE[(package_name.lower(), actual_version)] = cached
-            # Also store under the user-supplied key in case it differs from the
-            # resolved version (e.g. "2" → "2.32.3"), so repeated calls with the
-            # same input string hit the cache correctly.
-            if version != actual_version:
-                _SCAN_CACHE[(package_name.lower(), version)] = cached
+            with _SCAN_CACHE_LOCK:
+                _SCAN_CACHE[(package_name.lower(), actual_version)] = cached
+                # Also store under the user-supplied key in case it differs from the
+                # resolved version (e.g. "2" → "2.32.3"), so repeated calls with the
+                # same input string hit the cache correctly.
+                if version != actual_version:
+                    _SCAN_CACHE[(package_name.lower(), version)] = cached
 
         return result
 

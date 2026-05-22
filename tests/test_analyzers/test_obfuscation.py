@@ -102,3 +102,38 @@ def test_detects_exec_compile_b64decode():
     findings = analyzer.analyze(code, 'test.py')
     critical = [f for f in findings if f.severity == Severity.CRITICAL]
     assert len(critical) >= 1
+
+
+# ── Phase 8 A5 tests ─────────────────────────────────────────────────────────
+
+def test_exec_compile_b64decode_detected():
+    """exec(compile(base64.b64decode(...), ...)) must be detected as CRITICAL."""
+    from pkgxray.analyzers.obfuscation import ObfuscationAnalyzer
+    from pkgxray.analyzers.base import Severity
+    code = (
+        "import base64\n"
+        "exec(compile(base64.b64decode('aW1wb3J0IG9z'), '<string>', 'exec'))\n"
+    )
+    findings = ObfuscationAnalyzer().analyze(code, "test.py")
+    assert len(findings) >= 1
+    assert any(f.severity == Severity.CRITICAL for f in findings)
+
+
+def test_codecs_rot13_detected():
+    """codecs.decode(data, 'rot13') must be detected as MEDIUM (currently uncovered)."""
+    from pkgxray.analyzers.obfuscation import ObfuscationAnalyzer
+    from pkgxray.analyzers.base import Severity
+    code = "import codecs\nresult = codecs.decode('uryyb jbeyq', 'rot13')\n"
+    findings = ObfuscationAnalyzer().analyze(code, "test.py")
+    assert len(findings) >= 1
+    assert any(f.severity == Severity.MEDIUM for f in findings)
+
+
+def test_bytes_fromhex_detected():
+    """bytes.fromhex() must be detected as MEDIUM (currently uncovered)."""
+    from pkgxray.analyzers.obfuscation import ObfuscationAnalyzer
+    from pkgxray.analyzers.base import Severity
+    code = "payload = bytes.fromhex('48656c6c6f20576f726c64')\n"
+    findings = ObfuscationAnalyzer().analyze(code, "test.py")
+    assert len(findings) >= 1
+    assert any(f.severity == Severity.MEDIUM for f in findings)

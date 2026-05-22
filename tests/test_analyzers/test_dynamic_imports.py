@@ -146,3 +146,31 @@ def test_non_importlib_spec_from_file_location_not_flagged():
     code = "import mylib\nspec = mylib.util.spec_from_file_location('x', 'y')\n"
     findings = analyzer.analyze(code, "test.py")
     assert findings == []
+
+
+# ── Phase 8 A4 tests ─────────────────────────────────────────────────────────
+
+def test_importlib_util_spec_from_file_detected():
+    """importlib.util.spec_from_file_location() must be detected as HIGH."""
+    from pkgxray.analyzers.dynamic_imports import DynamicImportAnalyzer
+    from pkgxray.analyzers.base import Severity
+    code = (
+        "import importlib.util\n"
+        "def load():\n"
+        "    spec = importlib.util.spec_from_file_location('mod', '/tmp/evil.py')\n"
+    )
+    findings = DynamicImportAnalyzer().analyze(code, "test.py")
+    assert len(findings) >= 1
+    assert any(f.severity == Severity.HIGH for f in findings)
+
+
+def test_importlib_util_spec_from_file_module_level_critical():
+    """spec_from_file_location() at module level must be CRITICAL."""
+    from pkgxray.analyzers.dynamic_imports import DynamicImportAnalyzer
+    from pkgxray.analyzers.base import Severity
+    code = (
+        "import importlib.util\n"
+        "spec = importlib.util.spec_from_file_location('evil', '/tmp/evil.py')\n"
+    )
+    findings = DynamicImportAnalyzer().analyze(code, "test.py")
+    assert any(f.severity == Severity.CRITICAL for f in findings)

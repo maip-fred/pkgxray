@@ -167,3 +167,30 @@ def test_httpx_async_with_client_detected():
     )
     findings = analyzer.analyze(code, "test.py")
     assert len(findings) >= 1, "httpx.AsyncClient context-manager HTTP calls must be detected"
+
+
+# ── Phase 8 A2 tests ─────────────────────────────────────────────────────────
+
+def test_urlopen_from_import_alias_detected():
+    """from urllib.request import urlopen as fetch; fetch(url) must be detected."""
+    from pkgxray.analyzers.network import NetworkAnalyzer
+    from pkgxray.analyzers.base import Severity
+    code = (
+        "from urllib.request import urlopen as fetch\n"
+        "def download(url):\n"
+        "    return fetch(url)\n"
+    )
+    findings = NetworkAnalyzer().analyze(code, "test.py")
+    assert len(findings) >= 1
+    assert any(f.severity == Severity.HIGH for f in findings)
+
+
+def test_create_connection_alias_detected():
+    """from socket import create_connection as cc; cc(('evil.com', 80)) detected."""
+    from pkgxray.analyzers.network import NetworkAnalyzer
+    code = (
+        "from socket import create_connection as cc\n"
+        "cc(('evil.com', 80))\n"
+    )
+    findings = NetworkAnalyzer().analyze(code, "test.py")
+    assert len(findings) >= 1

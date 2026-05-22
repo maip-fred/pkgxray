@@ -343,3 +343,13 @@ def test_combo_does_not_exceed_global_cap():
         findings += findings_for(name, Severity.CRITICAL, 10)
     score, _ = calculate_risk_score(findings)
     assert score == 100
+
+
+# ── Phase 8 A6 test ──────────────────────────────────────────────────────────
+
+def test_config_files_has_explicit_cap():
+    """config_files must have an explicit entry in ANALYZER_CAPS (not fall to default)."""
+    from pkgxray.scorer import ANALYZER_CAPS
+    assert "config_files" in ANALYZER_CAPS, (
+        "config_files is missing from ANALYZER_CAPS — add it to calibrate scoring"
+    )

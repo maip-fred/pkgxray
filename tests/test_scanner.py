@@ -208,3 +208,73 @@ def test_extract_python_files_counts_binary_zip(tmp_path):
     files, binary_count = extract_python_files(archive)
     assert binary_count == 1
     assert len(files) == 1
+
+
+# ── Phase 8 B2/B4 tests ──────────────────────────────────────────────────────
+
+def test_cache_mutation_does_not_corrupt_subsequent_hits(monkeypatch):
+    """Mutating the returned ScanResult must not affect the cached copy."""
+    import pkgxray.scanner as scanner_mod
+    import pkgxray.extractor as ext_mod
+    import pkgxray.downloader as dl_mod
+    from pathlib import Path
+    from pkgxray.analyzers.base import Finding, Severity
+
+    scanner_mod.clear_cache()
+
+    _fake_info = {
+        "info": {"version": "1.0.0"},
+        "urls": [{"url": "http://x/mypkg-1.0.0.tar.gz", "filename": "mypkg-1.0.0.tar.gz",
+                  "packagetype": "sdist", "digests": {}}],
+    }
+    monkeypatch.setattr(dl_mod, "get_package_info", lambda *a, **kw: _fake_info)
+    monkeypatch.setattr(dl_mod, "download_file", lambda *a, **kw: Path("/fake/pkg.tar.gz"))
+    monkeypatch.setattr(ext_mod, "extract_python_files", lambda _: ([], 0))
+
+    r1 = scanner_mod.scan("mypkg", version="1.0.0")
+    # Mutate the returned object
+    r1.findings.append("INJECTED")
+
+    r2 = scanner_mod.scan("mypkg", version="1.0.0")
+    assert "INJECTED" not in r2.findings, (
+        "Cache must return a clean copy; mutation of r1 must not affect r2"
+    )
+
+
+def test_cache_thread_safety(monkeypatch):
+    """Concurrent scans of the same pinned version must not corrupt the cache."""
+    import threading
+    import pkgxray.scanner as scanner_mod
+    import pkgxray.extractor as ext_mod
+    import pkgxray.downloader as dl_mod
+    from pathlib import Path
+
+    scanner_mod.clear_cache()
+
+    _fake_info = {
+        "info": {"version": "1.0.0"},
+        "urls": [{"url": "http://x/mypkg-1.0.0.tar.gz", "filename": "mypkg-1.0.0.tar.gz",
+                  "packagetype": "sdist", "digests": {}}],
+    }
+    monkeypatch.setattr(dl_mod, "get_package_info", lambda *a, **kw: _fake_info)
+    monkeypatch.setattr(dl_mod, "download_file", lambda *a, **kw: Path("/fake/pkg.tar.gz"))
+    monkeypatch.setattr(ext_mod, "extract_python_files", lambda _: ([], 0))
+
+    errors = []
+    results = []
+
+    def run():
+        try:
+            results.append(scanner_mod.scan("mypkg", version="1.0.0"))
+        except Exception as e:
+            errors.append(str(e))
+
+    threads = [threading.Thread(target=run) for _ in range(20)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert not errors, f"Thread errors: {errors}"
+    assert len(results) == 20
+    assert all(r.package_name == "mypkg" for r in results)

@@ -156,3 +156,51 @@ def test_detects_pty_spawn_aliased():
     code = "import pty as p\np.spawn('/bin/sh')"
     findings = analyzer.analyze(code, "test.py")
     assert len(findings) >= 1
+
+
+# ── Phase 8 A1d tests ────────────────────────────────────────────────────────
+
+def test_os_spawnl_detected():
+    """os.spawnl() must be detected as CRITICAL."""
+    from pkgxray.analyzers.subprocess_calls import SubprocessAnalyzer
+    from pkgxray.analyzers.base import Severity
+    code = 'import os\nos.spawnl(os.P_WAIT, "/bin/sh", "sh", "-c", "id")\n'
+    findings = SubprocessAnalyzer().analyze(code, "test.py")
+    assert len(findings) >= 1
+    assert any(f.severity == Severity.CRITICAL for f in findings)
+
+
+def test_subprocess_getoutput_detected():
+    """subprocess.getoutput() must be detected as HIGH (inside function)."""
+    from pkgxray.analyzers.subprocess_calls import SubprocessAnalyzer
+    from pkgxray.analyzers.base import Severity
+    code = 'import subprocess\ndef run():\n    result = subprocess.getoutput("id")\n'
+    findings = SubprocessAnalyzer().analyze(code, "test.py")
+    assert len(findings) >= 1
+    assert any(f.severity == Severity.HIGH for f in findings)
+
+
+def test_subprocess_getstatusoutput_detected():
+    """subprocess.getstatusoutput() must be detected."""
+    from pkgxray.analyzers.subprocess_calls import SubprocessAnalyzer
+    code = 'import subprocess\nrc, out = subprocess.getstatusoutput("id")\n'
+    assert len(SubprocessAnalyzer().analyze(code, "test.py")) >= 1
+
+
+def test_pty_spawn_detected():
+    """pty.spawn() must be detected as HIGH (inside function)."""
+    from pkgxray.analyzers.subprocess_calls import SubprocessAnalyzer
+    from pkgxray.analyzers.base import Severity
+    code = 'import pty\n\ndef shell():\n    pty.spawn("/bin/bash")\n'
+    findings = SubprocessAnalyzer().analyze(code, "test.py")
+    assert len(findings) >= 1
+    assert any(f.severity == Severity.HIGH for f in findings)
+
+
+def test_pty_spawn_module_level_is_critical():
+    """pty.spawn() at module level must be CRITICAL."""
+    from pkgxray.analyzers.subprocess_calls import SubprocessAnalyzer
+    from pkgxray.analyzers.base import Severity
+    code = 'import pty\npty.spawn("/bin/bash")\n'
+    findings = SubprocessAnalyzer().analyze(code, "test.py")
+    assert any(f.severity == Severity.CRITICAL for f in findings)

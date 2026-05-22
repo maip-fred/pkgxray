@@ -196,3 +196,68 @@ def test_download_file_raises_on_sha256_mismatch(tmp_path):
     with patch("urllib.request.urlopen", return_value=mock_resp):
         with pytest.raises(DownloadError, match="SHA-256"):
             download_file("http://x/pkg.tar.gz", "a" * 64, "pkg.tar.gz", str(tmp_path))
+
+
+# ── Phase 8 D1 tests ─────────────────────────────────────────────────────────
+
+import urllib.error
+from unittest.mock import patch, MagicMock
+
+
+def test_get_package_info_http_error_non_404_raises_download_error():
+    """HTTP errors other than 404 must raise DownloadError, not PackageNotFoundError."""
+    error = urllib.error.HTTPError(url="", code=500, msg="Server Error", hdrs={}, fp=None)
+    with patch("urllib.request.urlopen", side_effect=error):
+        try:
+            get_package_info("requests")
+            assert False, "Expected DownloadError"
+        except DownloadError as e:
+            assert "500" in str(e)
+
+
+def test_get_package_info_url_error_raises_download_error():
+    """URLError (network failure) must raise DownloadError."""
+    error = urllib.error.URLError(reason="Name or service not known")
+    with patch("urllib.request.urlopen", side_effect=error):
+        try:
+            get_package_info("requests")
+            assert False, "Expected DownloadError"
+        except DownloadError as e:
+            assert "red" in str(e).lower() or "url" in str(e).lower()
+
+
+def test_get_package_info_json_error_raises_download_error():
+    """Invalid JSON response must raise DownloadError."""
+    mock_response = MagicMock()
+    mock_response.read.return_value = b"not valid json {{{"
+    mock_response.__enter__ = lambda s: s
+    mock_response.__exit__ = MagicMock(return_value=False)
+    with patch("urllib.request.urlopen", return_value=mock_response):
+        try:
+            get_package_info("requests")
+            assert False, "Expected DownloadError"
+        except DownloadError:
+            pass
+
+
+def test_find_best_distribution_falls_back_to_any_wheel():
+    """find_best_distribution must fall back to any-wheel if no sdist."""
+    package_info = {"urls": [
+        {"url": "https://example.com/pkg-1.0-cp312-cp312-linux.whl",
+         "filename": "pkg-1.0-cp312-cp312-linux.whl", "packagetype": "bdist_wheel",
+         "digests": {}},
+        {"url": "https://example.com/pkg-1.0-py3-none-any.whl",
+         "filename": "pkg-1.0-py3-none-any.whl", "packagetype": "bdist_wheel",
+         "digests": {}},
+    ]}
+    url, filename, sha256 = find_best_distribution(package_info)
+    assert "any" in filename
+
+
+def test_find_best_distribution_no_urls_raises_download_error():
+    """Empty urls list must raise DownloadError."""
+    try:
+        find_best_distribution({"urls": []})
+        assert False, "Expected DownloadError"
+    except DownloadError:
+        pass

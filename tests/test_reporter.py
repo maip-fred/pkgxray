@@ -299,3 +299,28 @@ def test_html_report_no_binary_notice_when_none_found():
     result.binary_files_found = 0
     html_output = generate_html_report(result)
     assert "binario(s) compilado(s)" not in html_output
+
+
+# ---------------------------------------------------------------------------
+# B1 — Rich markup escape in terminal report
+# ---------------------------------------------------------------------------
+
+def test_terminal_report_escapes_rich_markup_in_package_name(capsys):
+    """A package_name containing Rich markup tags must be rendered as literal text."""
+    from pkgxray.reporter import print_terminal_report
+    from pkgxray import ScanResult
+    from datetime import datetime, timezone
+    result = ScanResult(
+        package_name="[bold red]INJECTED[/bold red]",
+        version="1.0",
+        scan_date=datetime.now(timezone.utc).isoformat(),
+        findings=[], risk_score=0, risk_level="LOW",
+        files_analyzed=0,
+        summary={"low": 0, "medium": 0, "high": 0, "critical": 0, "total": 0},
+    )
+    # Should not raise; Rich markup tags must NOT be interpreted
+    print_terminal_report(result)
+    # The rendered output should contain the literal string, not rendered markup
+    captured = capsys.readouterr()
+    # The brackets must be present as literals (Rich escape converts [ to \[)
+    assert "INJECTED" in captured.out
