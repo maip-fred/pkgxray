@@ -2,6 +2,20 @@
 
 Todos los cambios notables de este proyecto se documentan en este archivo.
 
+## [1.0.0] - 2026-05-21
+
+### Nuevos analizadores
+- **`ProcessSpawnAnalyzer`**: detecta `Process(target=os.system)`, `Thread(target=subprocess.run)` y `executor.submit(os.system)` — patrones que evaden los analizadores de subprocess al pasar funciones peligrosas como referencia a lanzadores de procesos/hilos. Resuelve alias de imports.
+
+### Mejoras de detección
+- **`code_exec.py`**: detecta `exec`/`eval` accedidos indirectamente vía `__builtins__["exec"]`, `vars()["exec"]`, `globals()["exec"]` y `getattr(__builtins__, "exec")` — técnicas comunes de ofuscación.
+- **`scorer.py`**: nuevos combos de riesgo — `process_spawn+env_access` (+15 pts) y `process_spawn+network` (+10 pts).
+
+### Infraestructura
+- **`_disk_cache.py`**: evicción LRU automática — cuando el caché supera 200 entradas, se eliminan las 40 más antiguas. Mantiene el uso de disco acotado sin daemon externo.
+- **`_disk_cache.py`**: validación de SHA-256 con regex antes de leer/escribir entradas. Deserialización tolerante a severidades desconocidas (omite en vez de crashear).
+- Suite de tests ampliada de 193 a 377 pruebas. Sin regresiones.
+
 ## [0.3.0] - 2026-05-19
 
 ### Seguridad

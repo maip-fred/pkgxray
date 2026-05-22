@@ -13,7 +13,7 @@ from typing import Optional, Tuple
 try:
     _PKGXRAY_VERSION = _pkg_version("pkgxray")
 except Exception:
-    _PKGXRAY_VERSION = "0.3.0"
+    _PKGXRAY_VERSION = "1.0.0"
 
 
 class PackageNotFoundError(Exception):
