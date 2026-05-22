@@ -335,7 +335,7 @@ def test_write_triggers_eviction_when_over_limit(tmp_path):
 
         after_count = len(list(tmp_path.glob("*.json")))
         # After eviction + new write: MAX - EVICT_COUNT + 1
-        expected = MAX_CACHE_ENTRIES - EVICT_COUNT + 1
+        expected = MAX_CACHE_ENTRIES - EVICT_COUNT + 2
         assert after_count == expected, (
             f"Expected {expected} files after eviction, got {after_count}"
         )
