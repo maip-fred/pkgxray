@@ -2,7 +2,7 @@
 ![Python](https://img.shields.io/pypi/pyversions/pkgxray)
 ![License](https://img.shields.io/pypi/l/pkgxray)
 ![Tests](https://github.com/maip-fred/pkgxray/actions/workflows/publish.yml/badge.svg)
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/maip-fred/pkgxray/blob/main/notebooks/pkgxray_tutorial.ipynb)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/maip-fred/pkgxray/blob/main/notebooks/pkgxray_v1_walkthrough.ipynb)
 
 # pkgxray
 
@@ -27,6 +27,7 @@ HIGH   network     urllib3/connectionpool.py:287  urllib.request.urlopen() detec
 
 - [Por qué pkgxray](#por-qué-pkgxray)
 - [Instalación](#instalación)
+- [Docker](#docker)
 - [Uso desde la CLI](#uso-desde-la-cli)
 - [Uso como librería Python](#uso-como-librería-python)
 - [Cómo funciona — arquitectura](#cómo-funciona--arquitectura)
@@ -647,6 +648,90 @@ pkgxray scan $PACKAGE --fail-above 50 || { echo "Paquete rechazado por riesgo el
 Códigos de salida:
 - `0` — escaneo completado, riesgo dentro del umbral (o sin `--fail-above`)
 - `1` — riesgo supera `--fail-above`, o error en la descarga/análisis
+
+---
+
+## Docker
+
+pkgxray incluye imágenes Docker listas para usar, ideales para entornos sin Python instalado,
+pipelines de CI/CD aislados, o para garantizar reproducibilidad.
+
+### ¿Por qué Docker?
+
+El análisis de paquetes PyPI implica descargar y procesar código de terceros. Ejecutarlo en un
+contenedor añade una capa de aislamiento: el proceso de escaneo corre sin acceso al sistema
+anfitrión más allá de lo estrictamente necesario.
+
+### Estructura del Dockerfile
+
+El `Dockerfile` usa una construcción multi-stage:
+
+| Stage | Propósito |
+|-------|-----------|
+| `base` | Imagen base con pkgxray instalado y usuario sin privilegios |
+| `test` | Extiende `base` con pytest y archivos de tests |
+| `prod` | Imagen mínima de runtime con healthcheck y volumen de caché |
+
+**Mejoras de seguridad en v1.0.0:**
+- Usuario sin privilegios (`pkgxray`) — el proceso no corre como root
+- `ca-certificates` incluido — verificación TLS al conectarse a PyPI
+- `HEALTHCHECK` en la imagen prod — Docker detecta si el contenedor está roto
+- `.dockerignore` — evita copiar archivos innecesarios (notebooks, `.git`, `dist/`)
+
+### Uso con Docker Compose
+
+```bash
+# Escaneo básico (salida en terminal)
+docker compose run scan requests
+
+# Escaneo de cualquier paquete
+docker compose run scan boto3
+
+# Salida JSON (útil para parsear con jq)
+docker compose run scan-json flask | jq '.risk_score'
+
+# Reporte HTML guardado en ./reports/report.html
+mkdir -p reports
+docker compose run scan-html paramiko
+
+# Usar en CI/CD: falla si score >= 60
+docker compose run scan-ci some-package
+
+# Limpiar caché de disco compartido
+docker compose run clear-cache
+```
+
+**El caché de disco se comparte entre escaneos** mediante el volumen `pkgxray-cache`.
+El segundo escaneo del mismo paquete es casi instantáneo.
+
+### Testing con Docker
+
+```bash
+# Tests rápidos (sin red)
+docker compose run test
+
+# Tests con reporte de cobertura
+docker compose run test-cov
+
+# Tests de integración (requieren red)
+docker compose run test-slow
+
+# Pasar argumentos adicionales a pytest
+docker compose run test tests/test_analyzers/ -v -k "code_exec"
+```
+
+### Build manual
+
+```bash
+# Imagen de producción
+docker build --target prod -t pkgxray:latest .
+
+# Escanear un paquete
+docker run --rm pkgxray:latest scan requests
+
+# Con volumen para persistir caché
+docker run --rm -v pkgxray-cache:/home/pkgxray/.cache/pkgxray pkgxray:latest scan requests
+```
 
 ---
 

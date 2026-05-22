@@ -1,33 +1,87 @@
 version: "3.8"
 
+# Volumen compartido para persistir el caché de disco entre escaneos
+volumes:
+  pkgxray-cache:
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SERVICIOS DE TESTING
+# ─────────────────────────────────────────────────────────────────────────────
 services:
+  # Suite rápida (excluye tests de integración con red)
   test:
     build:
       context: .
       target: test
-    # Override CMD to pass custom args: docker compose run test pytest tests/test_analyzers/ -v
     command: ["tests/", "-v", "--tb=short", "-m", "not slow"]
 
+  # Solo tests lentos/integración (requieren red)
   test-slow:
     build:
       context: .
       target: test
     command: ["tests/", "-v", "--tb=short", "-m", "slow"]
 
+  # Suite completa con reporte de cobertura
   test-cov:
     build:
       context: .
       target: test
     command: ["tests/", "--cov=src/pkgxray", "--cov-report=term-missing", "-m", "not slow"]
 
+  # ───────────────────────────────────────────────────────────────────────────
+  # SERVICIOS DE ESCANEO
+  # Uso: docker compose run scan requests
+  #      docker compose run scan boto3 --version 1.34.0
+  # ───────────────────────────────────────────────────────────────────────────
+
+  # Escaneo con salida en terminal (colores via Rich)
   scan:
     build:
       context: .
       target: prod
     command: ["scan", "requests"]
+    volumes:
+      - pkgxray-cache:/home/pkgxray/.cache/pkgxray
 
+  # Escaneo con salida JSON — redirigir a archivo o parsear con jq
+  # Uso: docker compose run scan-json flask | jq '.risk_score'
   scan-json:
     build:
       context: .
       target: prod
     command: ["scan", "requests", "--format", "json"]
+    volumes:
+      - pkgxray-cache:/home/pkgxray/.cache/pkgxray
+
+  # Escaneo con salida HTML — guarda el reporte en ./reports/
+  # Uso: docker compose run scan-html requests
+  #      El reporte queda en ./reports/report.html
+  scan-html:
+    build:
+      context: .
+      target: prod
+    command: ["scan", "requests", "--format", "html", "--output", "/reports/report.html"]
+    volumes:
+      - pkgxray-cache:/home/pkgxray/.cache/pkgxray
+      - ./reports:/reports
+
+  # Escaneo con umbral para CI/CD
+  # Sale con código 1 si el score supera 60
+  # Uso: docker compose run scan-ci some-package
+  scan-ci:
+    build:
+      context: .
+      target: prod
+    command: ["scan", "requests", "--fail-above", "60"]
+    volumes:
+      - pkgxray-cache:/home/pkgxray/.cache/pkgxray
+
+  # Limpiar el caché de disco compartido
+  clear-cache:
+    build:
+      context: .
+      target: prod
+    command: ["clear-cache"]
+    volumes:
+      - pkgxray-cache:/home/pkgxray/.cache/pkgxray

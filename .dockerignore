@@ -1,0 +1,41 @@
+# Git
+.git
+.gitignore
+
+# Python cache
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info
+dist/
+build/
+.eggs/
+
+# Testing / coverage
+.pytest_cache
+.coverage
+htmlcov/
+.tox/
+
+# Notebooks output (código fuente sí se copia, outputs no)
+notebooks/
+
+# Docs (no necesarios en runtime)
+docs/
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Env files
+.env
+*.env.local
+
+# Docker build cache
+.dockerignore
