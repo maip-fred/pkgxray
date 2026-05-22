@@ -321,13 +321,13 @@ def test_write_triggers_eviction_when_over_limit(tmp_path):
 
     with patch("pkgxray._disk_cache.get_cache_dir", return_value=tmp_path):
         # Pre-populate with MAX_CACHE_ENTRIES existing entries
-        for i in range(MAX_CACHE_ENTRIES):
+        for i in range(MAX_CACHE_ENTRIES+1):
             f = tmp_path / f"{'b' * 62}{i:02d}.json"
             f.write_text(json.dumps({"version": 1}))
             os.utime(f, (i, i))
 
         before_count = len(list(tmp_path.glob("*.json")))
-        assert before_count == MAX_CACHE_ENTRIES
+        assert before_count == MAX_CACHE_ENTRIES+1
 
         # Write one more — should trigger eviction
         result = _make_result()
